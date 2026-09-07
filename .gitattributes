@@ -1,0 +1,8 @@
+# Normalize text to LF in the repository. Windows scripts keep CRLF on checkout.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.rc text eol=crlf
+
+*.ttf binary
