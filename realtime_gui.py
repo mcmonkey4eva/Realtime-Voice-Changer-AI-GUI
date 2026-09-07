@@ -1,4 +1,4 @@
-import os, sys, re, time, traceback, librosa
+import os, sys, re, time, traceback, threading, librosa
 from tqdm import tqdm
 import numpy as np
 
@@ -98,6 +98,12 @@ class GUI:
         self.low_latency_stream = False
         self.last_infer_ms = 0
         self.delay_time = 0
+        self.needs_reload = False
+        self.reloading = False
+        self.closing = False
+        self.reload_lock = threading.Lock()
+        self.stream_lock = threading.Lock()
+        self.last_values = {}
         self.hostapis = None
         self.input_devices = None
         self.output_devices = None
@@ -253,7 +259,7 @@ class GUI:
                     layout=[
                         [
                             sg.Text(i18n("Sample length"), tooltip=i18n("Chunk size in seconds processed each callback. Smaller is lower latency but harder on the GPU and more likely to glitch. Larger is smoother with more delay.")),
-                            sg.Slider(range=(0.02, 1.5), key="block_time", resolution=0.01, orientation="h", default_value=data.get("block_time", 0.25), enable_events=True, tooltip=i18n("Chunk size in seconds processed each callback. Smaller is lower latency but harder on the GPU and more likely to glitch. Larger is smoother with more delay.")),
+                            sg.Slider(range=(0.02, 1.5), key="block_time", resolution=0.01, orientation="h", default_value=data.get("block_time", 0.25), tooltip=i18n("Chunk size in seconds processed each callback. Smaller is lower latency but harder on the GPU and more likely to glitch. Larger is smoother with more delay.")),
                         ],
                         # [
                         #     sg.Text("Device latency"),
@@ -261,11 +267,11 @@ class GUI:
                         # ],
                         [
                             sg.Text(i18n("Fade length"), tooltip=i18n("SOLA crossfade overlap between chunks, in seconds. Longer fades hide seams; they also add delay.")),
-                            sg.Slider(range=(0.01, 0.15), key="crossfade_length", resolution=0.01, orientation="h", default_value=data.get("crossfade_length", 0.05), enable_events=True, tooltip=i18n("SOLA crossfade overlap between chunks, in seconds. Longer fades hide seams; they also add delay.")),
+                            sg.Slider(range=(0.01, 0.15), key="crossfade_length", resolution=0.01, orientation="h", default_value=data.get("crossfade_length", 0.05), tooltip=i18n("SOLA crossfade overlap between chunks, in seconds. Longer fades hide seams; they also add delay.")),
                         ],
                         [
                             sg.Text(i18n("Extra inference time"), tooltip=i18n("Extra past audio (seconds) given to the model as context before the current chunk. More can improve quality; it uses more compute and adds delay.")),
-                            sg.Slider(range=(0.05, 5.00), key="extra_time", resolution=0.01, orientation="h", default_value=data.get("extra_time", 2.5), enable_events=True, tooltip=i18n("Extra past audio (seconds) given to the model as context before the current chunk. More can improve quality; it uses more compute and adds delay.")),
+                            sg.Slider(range=(0.05, 5.00), key="extra_time", resolution=0.01, orientation="h", default_value=data.get("extra_time", 2.5), tooltip=i18n("Extra past audio (seconds) given to the model as context before the current chunk. More can improve quality; it uses more compute and adds delay.")),
                         ],
                         [
                             sg.Checkbox(i18n("Input noise reduction"), key="I_noise_reduce", enable_events=True, tooltip=i18n("Spectral gate on the microphone before conversion. Cuts hiss; adds a little delay.")),
@@ -287,6 +293,8 @@ class GUI:
         ]
         print("Creating window...")
         self.window = sg.Window("RVC - GUI", layout=layout, finalize=True)
+        for key in ("block_time", "crossfade_length", "extra_time"):
+            self.window[key].Widget.bind("<ButtonRelease-1>", lambda e, k=key: self.window.write_event_value("-SLIDER_RELEASE-", k))
         print(f"Realtime GUI ready ({time.perf_counter() - _boot_t0:.1f}s)")
         self.event_handler()
 
@@ -299,118 +307,248 @@ class GUI:
                     self.window["infer_time"].update(self.last_infer_ms)
                 continue
             if event == sg.WINDOW_CLOSED:
+                self.close_window()
+                return
+            if event == "-AUDIO_UI-":
+                self.apply_audio_ui(values)
+                continue
+            if event == "-SLIDER_RELEASE-":
+                key = values["-SLIDER_RELEASE-"] if isinstance(values, dict) and "-SLIDER_RELEASE-" in values else values
+                if key in ("block_time", "crossfade_length", "extra_time"):
+                    try:
+                        self.last_values[key] = float(self.window[key].Widget.get())
+                    except:
+                        pass
+                    self.request_audio_reload()
+                continue
+            if values:
+                self.last_values = values
+            self.handle_event(event, values)
+
+    def close_window(self):
+        self.closing = True
+        self.needs_reload = False
+        try:
+            self.persist_model_root(self.window["model_root"].get(), self.window["model_identity"].get())
+        except:
+            pass
+        self.stop_stream()
+        exit()
+
+    def model_paths_error(self, values):
+        model_files = self.scan_model_root(values.get("model_root") or "")
+        pth_path, index_path = model_files.get(values.get("model_identity", ""), ("", ""))
+        if len(pth_path.strip()) == 0:
+            return i18n("Please choose the .pth file")
+        if len(index_path.strip()) == 0:
+            return i18n("Please choose the .index file")
+        pattern = re.compile("[^\x00-\x7F]+")
+        if pattern.findall(pth_path):
+            return i18n("The .pth file path cannot contain Chinese characters")
+        if pattern.findall(index_path):
+            return i18n("The index file path cannot contain Chinese characters")
+        return None
+
+    def push_audio_ui(self, infer=None):
+        payload = {"sr": getattr(self.gui_config, "samplerate", ""), "delay_ms": int(np.round(self.delay_time * 1000))}
+        if infer is not None:
+            payload["infer"] = infer
+        try:
+            self.window.write_event_value("-AUDIO_UI-", payload)
+        except:
+            pass
+
+    def apply_audio_ui(self, values):
+        payload = values
+        if isinstance(values, dict) and "-AUDIO_UI-" in values and isinstance(values.get("-AUDIO_UI-"), dict):
+            payload = values["-AUDIO_UI-"]
+        if not isinstance(payload, dict):
+            return
+        if "sr" in payload:
+            self.window["sr_stream"].update(payload["sr"])
+        if "delay_ms" in payload:
+            self.window["delay_time"].update(payload["delay_ms"])
+        if "infer" in payload:
+            self.window["infer_time"].update(payload["infer"])
+
+    def request_audio_reload(self, validate=True):
+        global flag_vc
+        if self.closing:
+            return
+        running = bool(self.last_values.get("run_audio")) if self.last_values else flag_vc
+        if not running and not flag_vc:
+            return
+        if validate and running and self.last_values.get("change_voice"):
+            err = self.model_paths_error(self.last_values)
+            if err:
+                sg.popup(err)
+                return
+        self.needs_reload = True
+        if not self.reload_lock.acquire(blocking=False):
+            return
+        try:
+            threading.Thread(target=self.reload_worker, name="audio-reload", daemon=True).start()
+        except:
+            self.reload_lock.release()
+            raise
+
+    def reload_worker(self):
+        self.reloading = True
+        try:
+            while not self.closing:
+                self.needs_reload = False
+                values = dict(self.last_values)
                 try:
-                    self.persist_model_root(self.window["model_root"].get(), self.window["model_identity"].get())
-                except:
-                    pass
+                    if not values.get("run_audio"):
+                        self.stop_stream()
+                    else:
+                        self.apply_audio_state(values, bool(values.get("run_audio")), bool(values.get("change_voice")))
+                except Exception:
+                    print(traceback.format_exc())
+                if not self.needs_reload or self.closing:
+                    break
+        finally:
+            self.reloading = False
+            self.reload_lock.release()
+            if self.needs_reload and not self.closing:
+                self.request_audio_reload(validate=False)
+
+    def handle_event(self, event, values):
+        if values:
+            self.last_values = values
+        if event == "reload_devices" or event == "sg_hostapi":
+            if flag_vc:
                 self.stop_stream()
-                exit()
-            if event == "reload_devices" or event == "sg_hostapi":
-                self.gui_config.sg_hostapi = values["sg_hostapi"]
-                self.update_devices(hostapi_name=values["sg_hostapi"])
-                if self.gui_config.sg_hostapi not in self.hostapis:
-                    self.gui_config.sg_hostapi = self.hostapis[0]
-                self.window["sg_hostapi"].Update(values=self.hostapis)
-                self.window["sg_hostapi"].Update(value=self.gui_config.sg_hostapi)
-                if self.gui_config.sg_input_device not in self.input_devices and len(self.input_devices) > 0:
-                    self.gui_config.sg_input_device = self.input_devices[0]
-                self.window["sg_input_device"].Update(values=self.input_devices)
-                self.window["sg_input_device"].Update(value=self.gui_config.sg_input_device)
-                if self.gui_config.sg_output_device not in self.output_devices:
-                    self.gui_config.sg_output_device = self.output_devices[0]
-                self.window["sg_output_device"].Update(values=self.output_devices)
-                self.window["sg_output_device"].Update(value=self.gui_config.sg_output_device)
-            # Parameter hot update
-            if event == "threhold":
-                self.gui_config.threhold = values["threhold"]
-            elif event == "pitch":
-                self.gui_config.pitch = values["pitch"]
-                if self.rvc is not None:
-                    self.rvc.change_key(values["pitch"])
-            elif event == "formant":
-                self.gui_config.formant = values["formant"]
-                if self.rvc is not None:
-                    self.rvc.change_formant(values["formant"])
-            elif event == "index_rate":
-                self.gui_config.index_rate = values["index_rate"]
-                if self.rvc is not None:
-                    self.rvc.change_index_rate(values["index_rate"])
-            elif event == "rms_mix_rate":
-                self.gui_config.rms_mix_rate = values["rms_mix_rate"]
-            elif event in ["pm", "rmvpe", "fcpe"]:
-                self.gui_config.f0method = event
-            elif event == "I_noise_reduce":
-                self.gui_config.I_noise_reduce = values["I_noise_reduce"]
-                if self.stream is not None:
-                    self.delay_time += (1 if values["I_noise_reduce"] else -1) * min(values["crossfade_length"], 0.04)
-                    self.window["delay_time"].update(int(np.round(self.delay_time * 1000)))
-            elif event == "O_noise_reduce":
-                self.gui_config.O_noise_reduce = values["O_noise_reduce"]
-            elif event == "run_audio" or event == "change_voice":
-                if not self.apply_audio_state(values, values["run_audio"], values["change_voice"]):
+            self.gui_config.sg_hostapi = values["sg_hostapi"]
+            self.update_devices(hostapi_name=values["sg_hostapi"])
+            if self.gui_config.sg_hostapi not in self.hostapis:
+                self.gui_config.sg_hostapi = self.hostapis[0]
+            self.window["sg_hostapi"].Update(values=self.hostapis)
+            self.window["sg_hostapi"].Update(value=self.gui_config.sg_hostapi)
+            if self.gui_config.sg_input_device not in self.input_devices and len(self.input_devices) > 0:
+                self.gui_config.sg_input_device = self.input_devices[0]
+            self.window["sg_input_device"].Update(values=self.input_devices)
+            self.window["sg_input_device"].Update(value=self.gui_config.sg_input_device)
+            if self.gui_config.sg_output_device not in self.output_devices:
+                self.gui_config.sg_output_device = self.output_devices[0]
+            self.window["sg_output_device"].Update(values=self.output_devices)
+            self.window["sg_output_device"].Update(value=self.gui_config.sg_output_device)
+            self.request_audio_reload()
+            return
+        if event == "threhold":
+            self.gui_config.threhold = values["threhold"]
+        elif event == "pitch":
+            self.gui_config.pitch = values["pitch"]
+            if self.rvc is not None and not self.reloading:
+                self.rvc.change_key(values["pitch"])
+        elif event == "formant":
+            self.gui_config.formant = values["formant"]
+            if self.rvc is not None and not self.reloading:
+                self.rvc.change_formant(values["formant"])
+        elif event == "index_rate":
+            self.gui_config.index_rate = values["index_rate"]
+            if self.rvc is not None and not self.reloading:
+                self.rvc.change_index_rate(values["index_rate"])
+        elif event == "rms_mix_rate":
+            self.gui_config.rms_mix_rate = values["rms_mix_rate"]
+        elif event in ["pm", "rmvpe", "fcpe"]:
+            self.gui_config.f0method = event
+        elif event == "I_noise_reduce":
+            self.gui_config.I_noise_reduce = values["I_noise_reduce"]
+            if self.stream is not None:
+                self.delay_time += (1 if values["I_noise_reduce"] else -1) * min(values["crossfade_length"], 0.04)
+                self.window["delay_time"].update(int(np.round(self.delay_time * 1000)))
+        elif event == "O_noise_reduce":
+            self.gui_config.O_noise_reduce = values["O_noise_reduce"]
+        elif event == "run_audio" or event == "change_voice":
+            if event == "run_audio" and values["run_audio"]:
+                gui_settings.save(gui_settings.from_values(values))
+            if values.get("run_audio") and values.get("change_voice"):
+                err = self.model_paths_error(values)
+                if err:
+                    sg.popup(err)
                     self.window[event].update(False)
-                elif event == "run_audio" and values["run_audio"]:
-                    gui_settings.save(gui_settings.from_values(values))
-            elif event == "model_root" or event == "select_model_root":
-                candidates = [values.get("select_model_root") if event == "select_model_root" else None, values.get("model_root")]
-                try:
-                    candidates.append(self.window["model_root"].get())
-                except:
-                    pass
-                root = next((c for c in candidates if c and os.path.isdir(c)), "")
-                if not root:
-                    root = next((c for c in candidates if c), "") or ""
-                if root:
-                    self.window["model_root"].update(root)
-                model_files = self.scan_model_root(root)
-                identities = list(model_files.keys())
-                selected = values.get("model_identity", "")
-                if selected not in model_files:
-                    selected = identities[0] if identities else ""
-                self.window["model_identity"].Update(values=identities)
-                self.window["model_identity"].Update(value=selected)
-                self.persist_model_root(root, selected)
-            elif event == "model_identity":
-                self.persist_model_root(values.get("model_root") or "", values.get("model_identity") or "")
-            elif event == "debug":
-                self.gui_config.debug = values["debug"]
-                gui_settings.update(debug=values["debug"])
-            else:
-                # Other parameters do not support hot update
+                    return
+            if event == "run_audio" and not values["run_audio"]:
                 self.stop_stream()
-                self.window["run_audio"].update(False)
+            self.request_audio_reload()
+        elif event == "model_root" or event == "select_model_root":
+            candidates = [values.get("select_model_root") if event == "select_model_root" else None, values.get("model_root")]
+            try:
+                candidates.append(self.window["model_root"].get())
+            except:
+                pass
+            root = next((c for c in candidates if c and os.path.isdir(c)), "")
+            if not root:
+                root = next((c for c in candidates if c), "") or ""
+            if root:
+                self.window["model_root"].update(root)
+            model_files = self.scan_model_root(root)
+            identities = list(model_files.keys())
+            selected = values.get("model_identity", "")
+            if selected not in model_files:
+                selected = identities[0] if identities else ""
+            self.window["model_identity"].Update(values=identities)
+            self.window["model_identity"].Update(value=selected)
+            self.persist_model_root(root, selected)
+            self.request_audio_reload()
+        elif event == "model_identity":
+            self.persist_model_root(values.get("model_root") or "", values.get("model_identity") or "")
+            self.request_audio_reload()
+        elif event == "debug":
+            self.gui_config.debug = values["debug"]
+            gui_settings.update(debug=values["debug"])
+        else:
+            self.request_audio_reload()
 
     def apply_audio_state(self, values, run, convert):
         global flag_vc
         if not run:
             self.stop_stream()
             return True
+        wanted_sr = "sr_model" if values["sr_model"] else "sr_device"
+        stream_dirty = flag_vc and (self.low_latency_stream == convert or self.gui_config.block_time != values["block_time"] or self.gui_config.sr_type != wanted_sr or self.gui_config.sg_input_device != values["sg_input_device"] or self.gui_config.sg_output_device != values["sg_output_device"] or self.gui_config.sg_wasapi_exclusive != values["sg_wasapi_exclusive"] or self.gui_config.sg_hostapi != values["sg_hostapi"])
         if convert:
             model_files = self.scan_model_root(values["model_root"])
             pth_path, index_path = model_files.get(values.get("model_identity", ""), ("", ""))
-            ready = self.rvc is not None and hasattr(self, "input_wav") and self.input_wav.shape[0] == self.extra_frame + self.crossfade_frame + self.sola_search_frame + self.block_frame and self.rvc.pth_path == pth_path and self.rvc.index_path == index_path and self.gui_config.block_time == values["block_time"] and self.gui_config.crossfade_time == values["crossfade_length"] and self.gui_config.extra_time == values["extra_time"] and self.gui_config.sr_type == ("sr_model" if values["sr_model"] else "sr_device")
+            ready = self.rvc is not None and hasattr(self, "input_wav") and self.input_wav.shape[0] == self.extra_frame + self.crossfade_frame + self.sola_search_frame + self.block_frame and self.rvc.pth_path == pth_path and self.rvc.index_path == index_path and self.gui_config.block_time == values["block_time"] and self.gui_config.crossfade_time == values["crossfade_length"] and self.gui_config.extra_time == values["extra_time"] and self.gui_config.sr_type == wanted_sr
             if not ready:
                 if not self.set_values(values, require_model=True):
                     return False
-                if flag_vc and self.low_latency_stream:
+                if flag_vc:
                     self.stop_stream()
                 print(i18n("CUDA available: %s") % torch.cuda.is_available())
-                self.start_vc(reuse_stream=flag_vc)
+                self.start_vc(reuse_stream=False)
+                if self.rvc is not None and self.last_values:
+                    self.rvc.change_key(self.last_values["pitch"])
+                    self.rvc.change_formant(self.last_values["formant"])
+                    self.rvc.change_index_rate(self.last_values["index_rate"])
+            elif stream_dirty:
+                if not self.set_values(values, require_model=False):
+                    return False
+                if flag_vc:
+                    self.stop_stream()
             self.change_voice = True
+            if self.closing or not self.last_values.get("run_audio"):
+                self.stop_stream()
+                return True
             if not flag_vc:
                 if ready and not self.set_values(values, require_model=False):
                     return False
                 self.start_stream()
         else:
             self.change_voice = False
-            if flag_vc and not self.low_latency_stream:
-                self.stop_stream()
-            if not flag_vc:
+            restart = (not flag_vc) or (not self.low_latency_stream) or stream_dirty
+            if restart:
+                if flag_vc:
+                    self.stop_stream()
+                if self.closing or not self.last_values.get("run_audio"):
+                    return True
                 if not self.set_values(values, require_model=False):
                     return False
                 self.prepare_stream_params()
                 self.start_stream(low_latency=True)
-            self.window["infer_time"].update(0)
+            self.push_audio_ui(infer=0)
         if self.stream is not None:
             if self.change_voice:
                 self.delay_time = self.stream.latency[-1] + values["block_time"] + values["crossfade_length"] + 0.01
@@ -418,8 +556,7 @@ class GUI:
                     self.delay_time += min(values["crossfade_length"], 0.04)
             else:
                 self.delay_time = float(self.stream.latency[0]) + float(self.stream.latency[-1])
-            self.window["sr_stream"].update(self.gui_config.samplerate)
-            self.window["delay_time"].update(int(np.round(self.delay_time * 1000)))
+            self.push_audio_ui()
         return True
 
     def prepare_stream_params(self):
@@ -431,20 +568,8 @@ class GUI:
     def set_values(self, values, require_model=True):
         model_files = self.scan_model_root(values["model_root"])
         pth_path, index_path = model_files.get(values.get("model_identity", ""), ("", ""))
-        if require_model:
-            if len(pth_path.strip()) == 0:
-                sg.popup(i18n("Please choose the .pth file"))
-                return False
-            if len(index_path.strip()) == 0:
-                sg.popup(i18n("Please choose the .index file"))
-                return False
-            pattern = re.compile("[^\x00-\x7F]+")
-            if pattern.findall(pth_path):
-                sg.popup(i18n("The .pth file path cannot contain Chinese characters"))
-                return False
-            if pattern.findall(index_path):
-                sg.popup(i18n("The index file path cannot contain Chinese characters"))
-                return False
+        if require_model and self.model_paths_error(values):
+            return False
         self.set_devices(values["sg_input_device"], values["sg_output_device"])
         # self.device_latency = values["device_latency"]
         self.gui_config.sg_hostapi = values["sg_hostapi"]
@@ -546,27 +671,29 @@ class GUI:
 
     def start_stream(self, low_latency=False):
         global flag_vc
-        if not flag_vc:
-            flag_vc = True
-            self.low_latency_stream = low_latency
-            if "WASAPI" in self.gui_config.sg_hostapi and self.gui_config.sg_wasapi_exclusive:
-                extra_settings = sd.WasapiSettings(exclusive=True)
-            else:
-                extra_settings = None
-            self.stream = sd.Stream(callback=self.audio_callback, blocksize=self.block_frame, samplerate=self.gui_config.samplerate, channels=self.gui_config.channels, dtype="float32", extra_settings=extra_settings, latency="low")
-            self.stream.start()
+        with self.stream_lock:
+            if not flag_vc:
+                flag_vc = True
+                self.low_latency_stream = low_latency
+                if "WASAPI" in self.gui_config.sg_hostapi and self.gui_config.sg_wasapi_exclusive:
+                    extra_settings = sd.WasapiSettings(exclusive=True)
+                else:
+                    extra_settings = None
+                self.stream = sd.Stream(callback=self.audio_callback, blocksize=self.block_frame, samplerate=self.gui_config.samplerate, channels=self.gui_config.channels, dtype="float32", extra_settings=extra_settings, latency="low")
+                self.stream.start()
 
     def stop_stream(self):
         global flag_vc
-        flag_vc = False
-        if self.stream is not None:
-            try:
-                self.stream.abort()
-                self.stream.close()
-            except:
-                pass
-            self.stream = None
-        self.change_voice = False
+        with self.stream_lock:
+            flag_vc = False
+            if self.stream is not None:
+                try:
+                    self.stream.abort()
+                    self.stream.close()
+                except:
+                    pass
+                self.stream = None
+            self.change_voice = False
 
     def audio_callback(self, indata, outdata, frames, times, status):
         """
@@ -659,11 +786,12 @@ class GUI:
         """List audio devices"""
         global flag_vc
         print("Enumerating audio devices...")
-        flag_vc = False
-        sd._terminate()
-        sd._initialize()
-        devices = sd.query_devices()
-        hostapis = sd.query_hostapis()
+        with self.stream_lock:
+            flag_vc = False
+            sd._terminate()
+            sd._initialize()
+            devices = sd.query_devices()
+            hostapis = sd.query_hostapis()
         for hostapi in hostapis:
             for device_idx in hostapi["devices"]:
                 devices[device_idx]["hostapi_name"] = hostapi["name"]
