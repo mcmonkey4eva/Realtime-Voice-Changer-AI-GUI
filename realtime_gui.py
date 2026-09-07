@@ -1,15 +1,11 @@
 import os
 import sys
 
-now_dir = os.path.dirname(os.path.abspath(__file__))
-
-from tools.file_io import read_text
+from configs import gui_settings
 
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 os.environ["OMP_NUM_THREADS"] = "4"
-
-realtime_config_path = os.path.join(now_dir, "configs", "config.json")
 
 flag_vc = False
 
@@ -22,7 +18,6 @@ def printt(strr, *args):
 
 
 if __name__ == "__main__":
-    import json
     import re
     import time
     import traceback
@@ -123,31 +118,18 @@ if __name__ == "__main__":
             self.launcher()
 
         def load(self):
-            printt("Loading settings from %s", realtime_config_path)
-            try:
-                data = json.loads(read_text(realtime_config_path))
-                data["sr_model"] = data["sr_type"] == "sr_model"
-                data["sr_device"] = data["sr_type"] == "sr_device"
-                if data.get("f0method") not in ("pm", "rmvpe", "fcpe"):
-                    data["f0method"] = "rmvpe"
-                data["pm"] = data["f0method"] == "pm"
-                data["rmvpe"] = data["f0method"] == "rmvpe"
-                data["fcpe"] = data["f0method"] == "fcpe"
-                if data["sg_hostapi"] in self.hostapis:
-                    self.update_devices(hostapi_name=data["sg_hostapi"])
-                    if (
-                        data["sg_input_device"] not in self.input_devices
-                        or data["sg_output_device"] not in self.output_devices
-                    ):
-                        self.update_devices()
-                        data["sg_hostapi"] = self.hostapis[0]
-                        data["sg_input_device"] = self.input_devices[
-                            self.input_devices_indices.index(sd.default.device[0])
-                        ]
-                        data["sg_output_device"] = self.output_devices[
-                            self.output_devices_indices.index(sd.default.device[1])
-                        ]
-                else:
+            printt("Loading settings from %s", gui_settings.PATH)
+            raw = gui_settings.read()
+            if not raw:
+                printt("No valid settings file, using defaults")
+            data = gui_settings.build(**raw)
+            if data["sg_hostapi"] in self.hostapis:
+                self.update_devices(hostapi_name=data["sg_hostapi"])
+                if (
+                    data["sg_input_device"] not in self.input_devices
+                    or data["sg_output_device"] not in self.output_devices
+                ):
+                    self.update_devices()
                     data["sg_hostapi"] = self.hostapis[0]
                     data["sg_input_device"] = self.input_devices[
                         self.input_devices_indices.index(sd.default.device[0])
@@ -155,38 +137,16 @@ if __name__ == "__main__":
                     data["sg_output_device"] = self.output_devices[
                         self.output_devices_indices.index(sd.default.device[1])
                     ]
-            except:
-                printt("No valid settings file, using defaults")
-                with open(realtime_config_path, "w", encoding="utf8") as j:
-                    data = {
-                        "pth_path": "",
-                        "index_path": "",
-                        "model_root": "",
-                        "model_identity": "",
-                        "sg_hostapi": self.hostapis[0],
-                        "sg_wasapi_exclusive": False,
-                        "sg_input_device": self.input_devices[
-                            self.input_devices_indices.index(sd.default.device[0])
-                        ],
-                        "sg_output_device": self.output_devices[
-                            self.output_devices_indices.index(sd.default.device[1])
-                        ],
-                        "sr_type": "sr_model",
-                        "threhold": -60,
-                        "pitch": 0,
-                        "formant": 0.0,
-                        "index_rate": 0,
-                        "rms_mix_rate": 0,
-                        "block_time": 0.25,
-                        "crossfade_length": 0.05,
-                        "extra_time": 2.5,
-                        "f0method": "rmvpe",
-                    }
-                    data["sr_model"] = data["sr_type"] == "sr_model"
-                    data["sr_device"] = data["sr_type"] == "sr_device"
-                    data["pm"] = data["f0method"] == "pm"
-                    data["rmvpe"] = data["f0method"] == "rmvpe"
-                    data["fcpe"] = data["f0method"] == "fcpe"
+            else:
+                data["sg_hostapi"] = self.hostapis[0]
+                data["sg_input_device"] = self.input_devices[
+                    self.input_devices_indices.index(sd.default.device[0])
+                ]
+                data["sg_output_device"] = self.output_devices[
+                    self.output_devices_indices.index(sd.default.device[1])
+                ]
+            if not raw:
+                gui_settings.save(data)
             return data
 
         def scan_model_root(self, root):
@@ -209,14 +169,19 @@ if __name__ == "__main__":
                     models[name] = (pths[0], idxs[0])
             return models
 
-        def persist_model_root(self, root):
-            if not root or not os.path.isdir(root):
+        def persist_model_root(self, root, identity=None):
+            if not root:
+                try:
+                    root = self.window["model_root"].get()
+                except:
+                    root = ""
+            if not root:
                 return
+            changes = {"model_root": root}
+            if identity is not None:
+                changes["model_identity"] = identity
             try:
-                settings = json.loads(read_text(realtime_config_path))
-                settings["model_root"] = root
-                with open(realtime_config_path, "w", encoding="utf8") as j:
-                    json.dump(settings, j)
+                gui_settings.update(**changes)
             except Exception as e:
                 printt("Failed to save model_root: %s", e)
 
@@ -506,7 +471,10 @@ if __name__ == "__main__":
                 event, values = self.window.read()
                 if event == sg.WINDOW_CLOSED:
                     try:
-                        self.persist_model_root(self.window["model_root"].get())
+                        self.persist_model_root(
+                            self.window["model_root"].get(),
+                            self.window["model_identity"].get(),
+                        )
                     except:
                         pass
                     self.stop_stream()
@@ -537,35 +505,7 @@ if __name__ == "__main__":
                     if self.set_values(values) == True:
                         printt(i18n("CUDA available: %s"), torch.cuda.is_available())
                         self.start_vc()
-                        settings = {
-                            "pth_path": self.gui_config.pth_path,
-                            "index_path": self.gui_config.index_path,
-                            "model_root": values["model_root"],
-                            "model_identity": values["model_identity"],
-                            "sg_hostapi": values["sg_hostapi"],
-                            "sg_wasapi_exclusive": values["sg_wasapi_exclusive"],
-                            "sg_input_device": values["sg_input_device"],
-                            "sg_output_device": values["sg_output_device"],
-                            "sr_type": ["sr_model", "sr_device"][
-                                [
-                                    values["sr_model"],
-                                    values["sr_device"],
-                                ].index(True)
-                            ],
-                            "threhold": values["threhold"],
-                            "pitch": values["pitch"],
-                            "rms_mix_rate": values["rms_mix_rate"],
-                            "index_rate": values["index_rate"],
-                            # "device_latency": values["device_latency"],
-                            "block_time": values["block_time"],
-                            "crossfade_length": values["crossfade_length"],
-                            "extra_time": values["extra_time"],
-                            "f0method": ["pm", "rmvpe", "fcpe"][
-                                [values["pm"], values["rmvpe"], values["fcpe"]].index(True)
-                            ],
-                        }
-                        with open(realtime_config_path, "w", encoding="utf8") as j:
-                            json.dump(settings, j)
+                        gui_settings.save(gui_settings.from_values(values))
                         if self.stream is not None:
                             self.delay_time = (
                                 self.stream.latency[-1]
@@ -612,18 +552,32 @@ if __name__ == "__main__":
                 elif event in ["vc", "im"]:
                     self.function = event
                 elif event == "model_root" or event == "select_model_root":
-                    model_files = self.scan_model_root(values["model_root"])
+                    candidates = [
+                        values.get("select_model_root") if event == "select_model_root" else None,
+                        values.get("model_root"),
+                    ]
+                    try:
+                        candidates.append(self.window["model_root"].get())
+                    except:
+                        pass
+                    root = next((c for c in candidates if c and os.path.isdir(c)), "")
+                    if not root:
+                        root = next((c for c in candidates if c), "") or ""
+                    if root:
+                        self.window["model_root"].update(root)
+                    model_files = self.scan_model_root(root)
                     identities = list(model_files.keys())
                     selected = values.get("model_identity", "")
                     if selected not in model_files:
                         selected = identities[0] if identities else ""
                     self.window["model_identity"].Update(values=identities)
                     self.window["model_identity"].Update(value=selected)
-                    self.persist_model_root(
-                        values.get("model_root") or values.get("select_model_root") or ""
-                    )
+                    self.persist_model_root(root, selected)
                 elif event == "model_identity":
-                    pass
+                    self.persist_model_root(
+                        values.get("model_root") or "",
+                        values.get("model_identity") or "",
+                    )
                 elif event == "stop_vc" or event != "start_vc":
                     # Other parameters do not support hot update
                     self.stop_stream()
