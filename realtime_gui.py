@@ -209,6 +209,17 @@ if __name__ == "__main__":
                     models[name] = (pths[0], idxs[0])
             return models
 
+        def persist_model_root(self, root):
+            if not root or not os.path.isdir(root):
+                return
+            try:
+                settings = json.loads(read_text(realtime_config_path))
+                settings["model_root"] = root
+                with open(realtime_config_path, "w", encoding="utf8") as j:
+                    json.dump(settings, j)
+            except Exception as e:
+                printt("Failed to save model_root: %s", e)
+
         def launcher(self):
             data = self.load()
             model_root = data.get("model_root", "")
@@ -494,6 +505,10 @@ if __name__ == "__main__":
             while True:
                 event, values = self.window.read()
                 if event == sg.WINDOW_CLOSED:
+                    try:
+                        self.persist_model_root(self.window["model_root"].get())
+                    except:
+                        pass
                     self.stop_stream()
                     exit()
                 if event == "reload_devices" or event == "sg_hostapi":
@@ -604,6 +619,9 @@ if __name__ == "__main__":
                         selected = identities[0] if identities else ""
                     self.window["model_identity"].Update(values=identities)
                     self.window["model_identity"].Update(value=selected)
+                    self.persist_model_root(
+                        values.get("model_root") or values.get("select_model_root") or ""
+                    )
                 elif event == "model_identity":
                     pass
                 elif event == "stop_vc" or event != "start_vc":
