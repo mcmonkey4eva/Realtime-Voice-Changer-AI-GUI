@@ -85,6 +85,7 @@ class GUIConfig:
         self.wasapi_exclusive = False
         self.sg_input_device = ""
         self.sg_output_device = ""
+        self.debug = False
 
 class GUI:
     def __init__(self) :
@@ -168,6 +169,7 @@ class GUI:
         model_identity = data.get("model_identity", "")
         if model_identity not in model_files:
             model_identity = identities[0] if identities else ""
+        self.gui_config.debug = data.get("debug", False)
         sg.theme("LightBlue3")
         layout = [
             [
@@ -273,6 +275,7 @@ class GUI:
             [
                 sg.Button(i18n("Start audio conversion"), key="start_vc"),
                 sg.Button(i18n("Stop audio conversion"), key="stop_vc"),
+                sg.Checkbox(i18n("Debug"), key="debug", default=data.get("debug", False), enable_events=True),
                 sg.Radio(i18n("Input voice monitor"), "function", key="im", default=False, enable_events=True),
                 sg.Radio(i18n("Output converted voice"), "function", key="vc", default=True, enable_events=True),
                 sg.Text(i18n("Algorithmic delays(ms):")),
@@ -372,6 +375,9 @@ class GUI:
                 self.persist_model_root(root, selected)
             elif event == "model_identity":
                 self.persist_model_root(values.get("model_root") or "", values.get("model_identity") or "")
+            elif event == "debug":
+                self.gui_config.debug = values["debug"]
+                gui_settings.update(debug=values["debug"])
             elif event == "stop_vc" or event != "start_vc":
                 # Other parameters do not support hot update
                 self.stop_stream()
@@ -412,6 +418,7 @@ class GUI:
         self.gui_config.rms_mix_rate = values["rms_mix_rate"]
         self.gui_config.index_rate = values["index_rate"]
         self.gui_config.f0method = ["pm", "rmvpe", "fcpe"][[values["pm"], values["rmvpe"], values["fcpe"]].index(True)]
+        self.gui_config.debug = values["debug"]
         return True
 
     def start_vc(self):
@@ -579,7 +586,8 @@ class GUI:
             sola_offset = sola_offset.item()
         else:
             sola_offset = torch.argmax(cor_nom[0, 0] / cor_den[0, 0])
-        print(i18n("SOLA offset: %d") % int(sola_offset))
+        if self.gui_config.debug:
+            print(i18n("SOLA offset: %d") % int(sola_offset))
         infer_wav = infer_wav[sola_offset:]
         infer_wav[: self.sola_buffer_frame] *= self.fade_in_window
         infer_wav[: self.sola_buffer_frame] += self.sola_buffer * self.fade_out_window
@@ -588,7 +596,8 @@ class GUI:
         total_time = time.perf_counter() - start_time
         if flag_vc:
             self.window["infer_time"].update(int(total_time * 1000))
-        print(i18n("Inference time: %.2f seconds") % total_time)
+        if self.gui_config.debug:
+            print(i18n("Inference time: %.2f seconds") % total_time)
 
     def update_devices(self, hostapi_name=None):
         """List audio devices"""

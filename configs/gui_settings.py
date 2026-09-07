@@ -22,6 +22,7 @@ DEFAULTS = {
     "crossfade_length": 0.05,
     "extra_time": 2.5,
     "f0method": "rmvpe",
+    "debug": False,
 }
 
 
