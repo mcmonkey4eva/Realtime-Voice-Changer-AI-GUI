@@ -16,9 +16,9 @@ flag_vc = False
 
 def printt(strr, *args):
     if len(args) == 0:
-        print(strr)
+        print(strr, flush=True)
     else:
-        print(strr % args)
+        print(strr % args, flush=True)
 
 
 if __name__ == "__main__":
@@ -27,19 +27,60 @@ if __name__ == "__main__":
     import time
     import traceback
 
-    import librosa
-    from tools.torchgate import TorchGate
-    import numpy as np
-    import FreeSimpleGUI as sg
-    import sounddevice as sd
-    import torch
-    import torch.nn.functional as F
-    import torchaudio.transforms as tat
+    from tqdm import tqdm
 
-    from configs.config import Config
-    from infer import rtrvc as rvc_for_realtime
-    from i18n.i18n import I18nAuto
-    from tools.cuda_graph import cuda_graph_enabled, run_cuda_graph
+    printt("Booting realtime GUI...")
+    _boot_t0 = time.perf_counter()
+    _step = {"t": _boot_t0, "label": None}
+
+    def _boot_step(pbar, label):
+        now = time.perf_counter()
+        if _step["label"] is not None:
+            tqdm.write("%s (%.1fs)" % (_step["label"], now - _step["t"]))
+        _step["t"] = now
+        _step["label"] = label
+        pbar.set_description(label)
+        pbar.refresh()
+
+    with tqdm(total=8, unit="step", mininterval=0) as pbar:
+        _boot_step(pbar, "Loading numpy")
+        import numpy as np
+        pbar.update(1)
+
+        _boot_step(pbar, "Loading torch")
+        import torch
+        import torch.nn.functional as F
+        import torchaudio.transforms as tat
+        pbar.update(1)
+
+        _boot_step(pbar, "Loading librosa")
+        import librosa
+        pbar.update(1)
+
+        _boot_step(pbar, "Loading audio / GUI libs")
+        import FreeSimpleGUI as sg
+        import sounddevice as sd
+        pbar.update(1)
+
+        _boot_step(pbar, "Loading TorchGate")
+        from tools.torchgate import TorchGate
+        pbar.update(1)
+
+        _boot_step(pbar, "Loading config (CUDA / DirectML / graph probe)")
+        from configs.config import Config
+        pbar.update(1)
+
+        _boot_step(pbar, "Loading rtrvc (faiss / parselmouth / hubert)")
+        from infer import rtrvc as rvc_for_realtime
+        pbar.update(1)
+
+        _boot_step(pbar, "Loading i18n / cuda_graph")
+        from i18n.i18n import I18nAuto
+        from tools.cuda_graph import cuda_graph_enabled, run_cuda_graph
+        pbar.update(1)
+        tqdm.write("%s (%.1fs)" % (_step["label"], time.perf_counter() - _step["t"]))
+
+    printt("Modules loaded in %.1fs", time.perf_counter() - _boot_t0)
 
     i18n = I18nAuto()
 
@@ -66,6 +107,7 @@ if __name__ == "__main__":
 
     class GUI:
         def __init__(self) :
+            printt("Initializing GUI...")
             self.gui_config = GUIConfig()
             self.config = Config()
             printt("RVC_CUDA_GRAPH=%s", os.environ.get("RVC_CUDA_GRAPH", "0"))
@@ -81,6 +123,7 @@ if __name__ == "__main__":
             self.launcher()
 
         def load(self):
+            printt("Loading settings from %s", realtime_config_path)
             try:
                 data = json.loads(read_text(realtime_config_path))
                 data["sr_model"] = data["sr_type"] == "sr_model"
@@ -113,6 +156,7 @@ if __name__ == "__main__":
                         self.output_devices_indices.index(sd.default.device[1])
                     ]
             except:
+                printt("No valid settings file, using defaults")
                 with open(realtime_config_path, "w", encoding="utf8") as j:
                     data = {
                         "pth_path": "",
@@ -410,7 +454,9 @@ if __name__ == "__main__":
                     sg.Text("0", key="infer_time"),
                 ],
             ]
+            printt("Creating window...")
             self.window = sg.Window("RVC - GUI", layout=layout, finalize=True)
+            printt("Realtime GUI ready (%.1fs)", time.perf_counter() - _boot_t0)
             self.event_handler()
 
         def event_handler(self):
@@ -566,6 +612,8 @@ if __name__ == "__main__":
             return True
 
         def start_vc(self):
+            printt("Starting voice conversion (loading model)...")
+            _start_t0 = time.perf_counter()
             torch.cuda.empty_cache()
             self.rvc = rvc_for_realtime.RVC(
                 self.gui_config.pitch,
@@ -682,6 +730,7 @@ if __name__ == "__main__":
             ).to(self.config.device)
             self.prewarm_cuda_graph()
             self.start_stream()
+            printt("Voice conversion started in %.1fs", time.perf_counter() - _start_t0)
 
         def prewarm_cuda_graph(self):
             if not cuda_graph_enabled(self.config.device):
@@ -939,6 +988,7 @@ if __name__ == "__main__":
         def update_devices(self, hostapi_name=None):
             """获取设备列表"""
             global flag_vc
+            printt("Enumerating audio devices...")
             flag_vc = False
             sd._terminate()
             sd._initialize()
@@ -970,6 +1020,12 @@ if __name__ == "__main__":
                 for d in devices
                 if d["max_output_channels"] > 0 and d["hostapi_name"] == hostapi_name
             ]
+            printt(
+                "Audio devices: %s host APIs, %s inputs, %s outputs",
+                len(self.hostapis),
+                len(self.input_devices),
+                len(self.output_devices),
+            )
 
         def set_devices(self, input_device, output_device):
             """设置输出设备"""
