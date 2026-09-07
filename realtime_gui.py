@@ -96,6 +96,7 @@ class GUI:
         self.rvc = None
         self.change_voice = False
         self.low_latency_stream = False
+        self.last_infer_ms = 0
         self.delay_time = 0
         self.hostapis = None
         self.input_devices = None
@@ -290,8 +291,13 @@ class GUI:
         self.event_handler()
 
     def event_handler(self):
+        global flag_vc
         while True:
-            event, values = self.window.read()
+            event, values = self.window.read(timeout=100)
+            if event in (sg.TIMEOUT_EVENT, "__TIMEOUT__"):
+                if flag_vc and self.change_voice:
+                    self.window["infer_time"].update(self.last_infer_ms)
+                continue
             if event == sg.WINDOW_CLOSED:
                 try:
                     self.persist_model_root(self.window["model_root"].get(), self.window["model_identity"].get())
@@ -547,10 +553,7 @@ class GUI:
                 extra_settings = sd.WasapiSettings(exclusive=True)
             else:
                 extra_settings = None
-            stream_kw = dict(callback=self.audio_callback, blocksize=self.block_frame, samplerate=self.gui_config.samplerate, channels=self.gui_config.channels, dtype="float32", extra_settings=extra_settings)
-            if low_latency:
-                stream_kw["latency"] = "low"
-            self.stream = sd.Stream(**stream_kw)
+            self.stream = sd.Stream(callback=self.audio_callback, blocksize=self.block_frame, samplerate=self.gui_config.samplerate, channels=self.gui_config.channels, dtype="float32", extra_settings=extra_settings, latency="low")
             self.stream.start()
 
     def stop_stream(self):
@@ -648,11 +651,9 @@ class GUI:
         infer_wav[: self.sola_buffer_frame] += self.sola_buffer * self.fade_out_window
         self.sola_buffer[:] = infer_wav[self.block_frame : self.block_frame + self.sola_buffer_frame]
         outdata[:] = infer_wav[: self.block_frame].repeat(self.gui_config.channels, 1).t().cpu().numpy()
-        total_time = time.perf_counter() - start_time
-        if flag_vc:
-            self.window["infer_time"].update(int(total_time * 1000))
+        self.last_infer_ms = int((time.perf_counter() - start_time) * 1000)
         if self.gui_config.debug:
-            print(i18n("Inference time: %.2f seconds") % total_time)
+            print(i18n("Inference time: %.2f seconds") % (self.last_infer_ms / 1000.0))
 
     def update_devices(self, hostapi_name=None):
         """List audio devices"""
