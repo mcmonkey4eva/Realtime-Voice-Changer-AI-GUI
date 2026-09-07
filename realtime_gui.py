@@ -1,4 +1,4 @@
-import os, sys, re, time, traceback, threading, librosa
+import os, sys, re, time, traceback, threading, queue, librosa
 from tqdm import tqdm
 import numpy as np
 
@@ -87,6 +87,7 @@ class GUIConfig:
         self.wasapi_exclusive = False
         self.sg_input_device = ""
         self.sg_output_device = ""
+        self.sg_output_device_2 = NONE_MODEL
         self.debug = False
 
 class GUI:
@@ -112,6 +113,8 @@ class GUI:
         self.input_devices_indices = None
         self.output_devices_indices = None
         self.stream = None
+        self.stream2 = None
+        self.monitor_q = None
         self.update_devices()
         self.launcher()
 
@@ -132,6 +135,8 @@ class GUI:
             data["sg_hostapi"] = self.hostapis[0]
             data["sg_input_device"] = self.input_devices[self.input_devices_indices.index(sd.default.device[0])]
             data["sg_output_device"] = self.output_devices[self.output_devices_indices.index(sd.default.device[1])]
+        if data.get("sg_output_device_2") not in self.output2_choices():
+            data["sg_output_device_2"] = NONE_MODEL
         if not raw:
             gui_settings.save(data)
         return data
@@ -162,6 +167,9 @@ class GUI:
     def is_none_model(self, values=None):
         src = self.last_values if values is None else values
         return (src.get("model_identity") or "") == NONE_MODEL
+
+    def output2_choices(self):
+        return [NONE_MODEL] + list(self.output_devices or [])
 
     def persist_model_root(self, root, identity=None):
         if not root:
@@ -208,6 +216,9 @@ class GUI:
         if not name or not isinstance(snap, dict):
             return
         data = gui_settings.loaded_preset(snap)
+        cur_in = values.get("sg_input_device", "")
+        cur_out = values.get("sg_output_device", "")
+        cur_out2 = values.get("sg_output_device_2") or NONE_MODEL
         hostapi = data.get("sg_hostapi", "")
         if hostapi and hostapi != values.get("sg_hostapi"):
             if flag_vc:
@@ -219,10 +230,16 @@ class GUI:
             self.window["sg_hostapi"].Update(values=self.hostapis)
             self.window["sg_input_device"].Update(values=self.input_devices)
             self.window["sg_output_device"].Update(values=self.output_devices)
-        if data["sg_input_device"] not in self.input_devices and self.input_devices:
-            data["sg_input_device"] = self.input_devices[0]
-        if data["sg_output_device"] not in self.output_devices and self.output_devices:
-            data["sg_output_device"] = self.output_devices[0]
+            self.window["sg_output_device_2"].Update(values=self.output2_choices())
+        if cur_in not in self.input_devices and self.input_devices:
+            cur_in = self.input_devices[0]
+        if cur_out not in self.output_devices and self.output_devices:
+            cur_out = self.output_devices[0]
+        if cur_out2 not in self.output2_choices():
+            cur_out2 = NONE_MODEL
+        self.window["sg_input_device"].Update(value=cur_in)
+        self.window["sg_output_device"].Update(value=cur_out)
+        self.window["sg_output_device_2"].Update(value=cur_out2)
         root = data.get("model_root", "")
         self.window["model_root"].update(root)
         identities = self.model_identity_list(root)
@@ -231,7 +248,7 @@ class GUI:
             identity = NONE_MODEL
             data["model_identity"] = identity
         self.window["model_identity"].Update(values=identities, value=identity)
-        for key in ("sg_hostapi", "sg_input_device", "sg_output_device", "sg_wasapi_exclusive", "threhold", "pitch", "formant", "index_rate", "rms_mix_rate", "block_time", "crossfade_length", "extra_time", "sr_model", "sr_device", "pm", "rmvpe", "fcpe", "I_noise_reduce", "O_noise_reduce", "debug"):
+        for key in ("sg_hostapi", "sg_wasapi_exclusive", "pitch", "formant", "index_rate", "rms_mix_rate", "block_time", "crossfade_length", "extra_time", "sr_model", "sr_device", "pm", "rmvpe", "fcpe", "I_noise_reduce", "O_noise_reduce", "debug"):
             self.window[key].update(data[key])
         self.window["preset"].update(name)
         merged = dict(values)
@@ -242,6 +259,9 @@ class GUI:
         merged["change_voice"] = values.get("change_voice")
         merged["preset"] = name
         merged["model_identity"] = identity
+        merged["sg_input_device"] = cur_in
+        merged["sg_output_device"] = cur_out
+        merged["sg_output_device_2"] = cur_out2
         self.last_values = merged
         self.set_values(merged, require_model=False)
         if self.rvc is not None:
@@ -307,8 +327,12 @@ class GUI:
                             sg.Combo(self.input_devices, key="sg_input_device", default_value=data.get("sg_input_device", ""), enable_events=True, size=(45, 1), tooltip=i18n("Capture device for your microphone / voice.")),
                         ],
                         [
-                            sg.Text(i18n("Output device"), tooltip=i18n("Playback device for the converted (or monitored) audio.")),
-                            sg.Combo(self.output_devices, key="sg_output_device", default_value=data.get("sg_output_device", ""), enable_events=True, size=(45, 1), tooltip=i18n("Playback device for the converted (or monitored) audio.")),
+                            sg.Text(i18n("Output device"), tooltip=i18n("Primary playback device. Use this for the virtual cable / passthrough others should hear.")),
+                            sg.Combo(self.output_devices, key="sg_output_device", default_value=data.get("sg_output_device", ""), enable_events=True, size=(45, 1), tooltip=i18n("Primary playback device. Use this for the virtual cable / passthrough others should hear.")),
+                        ],
+                        [
+                            sg.Text(i18n("Output device 2"), tooltip=i18n("Optional second playback device, for example your headphones so you can hear yourself. None disables it.")),
+                            sg.Combo(self.output2_choices(), key="sg_output_device_2", default_value=data.get("sg_output_device_2", NONE_MODEL), enable_events=True, size=(45, 1), tooltip=i18n("Optional second playback device, for example your headphones so you can hear yourself. None disables it.")),
                         ],
                         [
                             sg.Button(i18n("Reload device list"), key="reload_devices", tooltip=i18n("Rescan host APIs and devices after plugging something in.")),
@@ -533,6 +557,12 @@ class GUI:
                 self.gui_config.sg_output_device = self.output_devices[0]
             self.window["sg_output_device"].Update(values=self.output_devices)
             self.window["sg_output_device"].Update(value=self.gui_config.sg_output_device)
+            out2 = values.get("sg_output_device_2") or NONE_MODEL
+            if out2 not in self.output2_choices():
+                out2 = NONE_MODEL
+            self.gui_config.sg_output_device_2 = out2
+            self.window["sg_output_device_2"].Update(values=self.output2_choices())
+            self.window["sg_output_device_2"].Update(value=out2)
             self.request_audio_reload()
             return
         if event == "threhold":
@@ -647,6 +677,8 @@ class GUI:
             self.stop_stream()
             return True
         wanted_sr = "sr_model" if values["sr_model"] else "sr_device"
+        out2 = values.get("sg_output_device_2") or NONE_MODEL
+        out2_dirty = flag_vc and out2 != (self.gui_config.sg_output_device_2 or NONE_MODEL)
         stream_dirty = flag_vc and (self.low_latency_stream == convert or self.gui_config.block_time != values["block_time"] or self.gui_config.sr_type != wanted_sr or self.gui_config.sg_input_device != values["sg_input_device"] or self.gui_config.sg_output_device != values["sg_output_device"] or self.gui_config.sg_wasapi_exclusive != values["sg_wasapi_exclusive"] or self.gui_config.sg_hostapi != values["sg_hostapi"])
         if convert:
             none = self.is_none_model(values)
@@ -699,6 +731,10 @@ class GUI:
             else:
                 self.delay_time = float(self.stream.latency[0]) + float(self.stream.latency[-1])
             self.push_audio_ui()
+        if self.stream is not None and out2_dirty and not stream_dirty:
+            self.gui_config.sg_output_device_2 = out2
+            extra_settings = sd.WasapiSettings(exclusive=True) if "WASAPI" in self.gui_config.sg_hostapi and self.gui_config.sg_wasapi_exclusive else None
+            self.start_output2(extra_settings)
         return True
 
     def prepare_stream_params(self):
@@ -718,6 +754,7 @@ class GUI:
         self.gui_config.sg_wasapi_exclusive = values["sg_wasapi_exclusive"]
         self.gui_config.sg_input_device = values["sg_input_device"]
         self.gui_config.sg_output_device = values["sg_output_device"]
+        self.gui_config.sg_output_device_2 = values.get("sg_output_device_2") or NONE_MODEL
         self.gui_config.pth_path = pth_path
         self.gui_config.index_path = index_path
         self.gui_config.sr_type = ["sr_model", "sr_device"][[values["sr_model"], values["sr_device"]].index(True)]
@@ -832,11 +869,42 @@ class GUI:
                     extra_settings = None
                 self.stream = sd.Stream(callback=self.audio_callback, blocksize=self.block_frame, samplerate=self.gui_config.samplerate, channels=self.gui_config.channels, dtype="float32", extra_settings=extra_settings, latency="low")
                 self.stream.start()
+                self.start_output2(extra_settings)
+
+    def start_output2(self, extra_settings):
+        self.stop_output2()
+        name = self.gui_config.sg_output_device_2
+        if not name or name == NONE_MODEL or name == self.gui_config.sg_output_device:
+            return
+        try:
+            idx = self.output_devices_indices[self.output_devices.index(name)]
+        except (ValueError, IndexError):
+            return
+        try:
+            ch = min(int(sd.query_devices(device=idx)["max_output_channels"]), max(1, self.gui_config.channels), 2)
+            self.monitor_q = queue.Queue(maxsize=8)
+            self.stream2 = sd.OutputStream(device=idx, callback=self.output2_callback, blocksize=self.block_frame, samplerate=self.gui_config.samplerate, channels=ch, dtype="float32", extra_settings=extra_settings, latency="low")
+            self.stream2.start()
+            print(i18n("Output device 2: %s:%s") % (str(idx), name))
+        except Exception:
+            print(traceback.format_exc())
+            self.stop_output2()
+
+    def stop_output2(self):
+        self.monitor_q = None
+        if self.stream2 is not None:
+            try:
+                self.stream2.abort()
+                self.stream2.close()
+            except:
+                pass
+            self.stream2 = None
 
     def stop_stream(self):
         global flag_vc
         with self.stream_lock:
             flag_vc = False
+            self.stop_output2()
             if self.stream is not None:
                 try:
                     self.stream.abort()
@@ -903,6 +971,7 @@ class GUI:
             else:
                 mono = librosa.to_mono(indata.T)
                 outdata[:] = np.repeat(mono.reshape(-1, 1), outdata.shape[1], axis=1)
+            self.push_output2(outdata)
             return
         start_time = time.perf_counter()
         indata = librosa.to_mono(indata.T)
@@ -975,9 +1044,49 @@ class GUI:
         infer_wav[: self.sola_buffer_frame] += self.sola_buffer * self.fade_out_window
         self.sola_buffer[:] = infer_wav[self.block_frame : self.block_frame + self.sola_buffer_frame]
         outdata[:] = infer_wav[: self.block_frame].repeat(self.gui_config.channels, 1).t().cpu().numpy()
+        self.push_output2(outdata)
         self.last_infer_ms = int((time.perf_counter() - start_time) * 1000)
         if self.gui_config.debug:
             print(i18n("Inference time: %.2f seconds") % (self.last_infer_ms / 1000.0))
+
+    def push_output2(self, outdata):
+        q = self.monitor_q
+        if q is None:
+            return
+        try:
+            q.put_nowait(np.copy(outdata))
+        except queue.Full:
+            try:
+                q.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                q.put_nowait(np.copy(outdata))
+            except queue.Full:
+                pass
+
+    def output2_callback(self, outdata, frames, times, status):
+        q = self.monitor_q
+        if q is None or not flag_vc:
+            outdata[:] = 0
+            return
+        try:
+            data = q.get_nowait()
+        except queue.Empty:
+            outdata[:] = 0
+            return
+        src = np.asarray(data, dtype=np.float32)
+        if src.ndim == 1:
+            src = src.reshape(-1, 1)
+        if src.shape[0] != frames:
+            outdata[:] = 0
+            return
+        if src.shape[1] < outdata.shape[1]:
+            outdata[:] = np.repeat(src[:, :1], outdata.shape[1], axis=1)
+        elif src.shape[1] > outdata.shape[1]:
+            outdata[:] = src[:, : outdata.shape[1]]
+        else:
+            outdata[:] = src
 
     def update_devices(self, hostapi_name=None):
         """List audio devices"""
