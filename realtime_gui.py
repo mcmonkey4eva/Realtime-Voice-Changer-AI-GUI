@@ -177,12 +177,12 @@ class GUI:
                     title=i18n("Load model"),
                     layout=[
                         [
-                            sg.Input(default_text=model_root, key="model_root", enable_events=True),
-                            sg.FolderBrowse(i18n("Select root folder"), key="select_model_root", target="model_root", enable_events=True, initial_folder=model_root if os.path.isdir(model_root) else os.path.join(os.getcwd(), "assets/weights")),
+                            sg.Input(default_text=model_root, key="model_root", enable_events=True, tooltip=i18n("Folder whose direct subfolders each contain a .pth and a .index. Those subfolder names become the Model list.")),
+                            sg.FolderBrowse(i18n("Select root folder"), key="select_model_root", target="model_root", enable_events=True, initial_folder=model_root if os.path.isdir(model_root) else os.path.join(os.getcwd(), "assets/weights"), tooltip=i18n("Folder whose direct subfolders each contain a .pth and a .index. Those subfolder names become the Model list.")),
                         ],
                         [
-                            sg.Text(i18n("Model")),
-                            sg.Combo(identities, key="model_identity", default_value=model_identity, enable_events=True, size=(45, 1)),
+                            sg.Text(i18n("Model"), tooltip=i18n("Voice identity to load. Uses the .pth and .index inside the selected subfolder.")),
+                            sg.Combo(identities, key="model_identity", default_value=model_identity, enable_events=True, size=(45, 1), tooltip=i18n("Voice identity to load. Uses the .pth and .index inside the selected subfolder.")),
                         ],
                     ],
                 )
@@ -191,23 +191,23 @@ class GUI:
                 sg.Frame(
                     layout=[
                         [
-                            sg.Text(i18n("Device type")),
-                            sg.Combo(self.hostapis, key="sg_hostapi", default_value=data.get("sg_hostapi", ""), enable_events=True, size=(20, 1)),
-                            sg.Checkbox(i18n("Exclusive WASAPI device"), key="sg_wasapi_exclusive", default=data.get("sg_wasapi_exclusive", False), enable_events=True),
+                            sg.Text(i18n("Device type"), tooltip=i18n("Audio host API (MME, WASAPI, ASIO, …). Filters the input/output lists. WASAPI or ASIO is usually lowest latency.")),
+                            sg.Combo(self.hostapis, key="sg_hostapi", default_value=data.get("sg_hostapi", ""), enable_events=True, size=(20, 1), tooltip=i18n("Audio host API (MME, WASAPI, ASIO, …). Filters the input/output lists. WASAPI or ASIO is usually lowest latency.")),
+                            sg.Checkbox(i18n("Exclusive WASAPI device"), key="sg_wasapi_exclusive", default=data.get("sg_wasapi_exclusive", False), enable_events=True, tooltip=i18n("When Device type is WASAPI, take exclusive control of the device for lower latency. Other apps cannot use it at the same time.")),
                         ],
                         [
-                            sg.Text(i18n("Input device")),
-                            sg.Combo(self.input_devices, key="sg_input_device", default_value=data.get("sg_input_device", ""), enable_events=True, size=(45, 1)),
+                            sg.Text(i18n("Input device"), tooltip=i18n("Capture device for your microphone / voice.")),
+                            sg.Combo(self.input_devices, key="sg_input_device", default_value=data.get("sg_input_device", ""), enable_events=True, size=(45, 1), tooltip=i18n("Capture device for your microphone / voice.")),
                         ],
                         [
-                            sg.Text(i18n("Output device")),
-                            sg.Combo(self.output_devices, key="sg_output_device", default_value=data.get("sg_output_device", ""), enable_events=True, size=(45, 1)),
+                            sg.Text(i18n("Output device"), tooltip=i18n("Playback device for the converted (or monitored) audio.")),
+                            sg.Combo(self.output_devices, key="sg_output_device", default_value=data.get("sg_output_device", ""), enable_events=True, size=(45, 1), tooltip=i18n("Playback device for the converted (or monitored) audio.")),
                         ],
                         [
-                            sg.Button(i18n("Reload device list"), key="reload_devices"),
-                            sg.Radio(i18n("Use model sample rate"), "sr_type", key="sr_model", default=data.get("sr_model", True), enable_events=True),
-                            sg.Radio(i18n("Use device sample rate"), "sr_type", key="sr_device", default=data.get("sr_device", False), enable_events=True),
-                            sg.Text(i18n("Sample rate:")),
+                            sg.Button(i18n("Reload device list"), key="reload_devices", tooltip=i18n("Rescan host APIs and devices after plugging something in.")),
+                            sg.Radio(i18n("Use model sample rate"), "sr_type", key="sr_model", default=data.get("sr_model", True), enable_events=True, tooltip=i18n("Run the stream at the voice model's trained sample rate (for example 40 kHz or 48 kHz).")),
+                            sg.Radio(i18n("Use device sample rate"), "sr_type", key="sr_device", default=data.get("sr_device", False), enable_events=True, tooltip=i18n("Run at the audio device's default sample rate instead. Can avoid resampling problems on some devices.")),
+                            sg.Text(i18n("Sample rate:"), tooltip=i18n("Sample rate actually used after you start conversion.")),
                             sg.Text("", key="sr_stream"),
                         ],
                     ],
@@ -218,30 +218,30 @@ class GUI:
                 sg.Frame(
                     layout=[
                         [
-                            sg.Text(i18n("Response threshold")),
-                            sg.Slider(range=(-60, 0), key="threhold", resolution=1, orientation="h", default_value=data.get("threhold", -60), enable_events=True),
+                            sg.Text(i18n("Response threshold"), tooltip=i18n("Silence gate in dB. Chunks quieter than this are muted so the converter stays quiet. -60 turns the gate off.")),
+                            sg.Slider(range=(-60, 0), key="threhold", resolution=1, orientation="h", default_value=data.get("threhold", -60), enable_events=True, tooltip=i18n("Silence gate in dB. Chunks quieter than this are muted so the converter stays quiet. -60 turns the gate off.")),
                         ],
                         [
-                            sg.Text(i18n("Pitch settings")),
-                            sg.Slider(range=(-16, 16), key="pitch", resolution=1, orientation="h", default_value=data.get("pitch", 0), enable_events=True),
+                            sg.Text(i18n("Pitch settings"), tooltip=i18n("Transpose in semitones applied to detected pitch. +12 is one octave up, -12 one octave down.")),
+                            sg.Slider(range=(-16, 16), key="pitch", resolution=1, orientation="h", default_value=data.get("pitch", 0), enable_events=True, tooltip=i18n("Transpose in semitones applied to detected pitch. +12 is one octave up, -12 one octave down.")),
                         ],
                         [
-                            sg.Text(i18n("Gender factor / voice thickness")),
-                            sg.Slider(range=(-2, 2), key="formant", resolution=0.05, orientation="h", default_value=data.get("formant", 0.0), enable_events=True),
+                            sg.Text(i18n("Gender factor / voice thickness"), tooltip=i18n("Formant shift in semitones. Changes apparent vocal-tract size / brightness separately from pitch. Positive often sounds thinner or higher; negative thicker or lower.")),
+                            sg.Slider(range=(-2, 2), key="formant", resolution=0.05, orientation="h", default_value=data.get("formant", 0.0), enable_events=True, tooltip=i18n("Formant shift in semitones. Changes apparent vocal-tract size / brightness separately from pitch. Positive often sounds thinner or higher; negative thicker or lower.")),
                         ],
                         [
-                            sg.Text(i18n("Index Rate")),
-                            sg.Slider(range=(0.0, 1.0), key="index_rate", resolution=0.01, orientation="h", default_value=data.get("index_rate", 0), enable_events=True),
+                            sg.Text(i18n("Index Rate"), tooltip=i18n("How strongly retrieval replaces live features with the closest features from this model's .index. 0 is off. Higher values lock timbre closer to the training voice and can reduce leakage.")),
+                            sg.Slider(range=(0.0, 1.0), key="index_rate", resolution=0.01, orientation="h", default_value=data.get("index_rate", 0), enable_events=True, tooltip=i18n("How strongly retrieval replaces live features with the closest features from this model's .index. 0 is off. Higher values lock timbre closer to the training voice and can reduce leakage.")),
                         ],
                         [
-                            sg.Text(i18n("loudness factor")),
-                            sg.Slider(range=(0.0, 1.0), key="rms_mix_rate", resolution=0.01, orientation="h", default_value=data.get("rms_mix_rate", 0), enable_events=True),
+                            sg.Text(i18n("loudness factor"), tooltip=i18n("How much the output follows your microphone volume envelope. 0 matches your speaking loudness; 1 keeps the model's own output level.")),
+                            sg.Slider(range=(0.0, 1.0), key="rms_mix_rate", resolution=0.01, orientation="h", default_value=data.get("rms_mix_rate", 0), enable_events=True, tooltip=i18n("How much the output follows your microphone volume envelope. 0 matches your speaking loudness; 1 keeps the model's own output level.")),
                         ],
                         [
-                            sg.Text(i18n("pitch detection algorithm")),
-                            sg.Radio("pm", "f0method", key="pm", default=data.get("pm", False), enable_events=True),
-                            sg.Radio("rmvpe", "f0method", key="rmvpe", default=data.get("rmvpe", True), enable_events=True),
-                            sg.Radio("fcpe", "f0method", key="fcpe", default=data.get("fcpe", False), enable_events=True),
+                            sg.Text(i18n("pitch detection algorithm"), tooltip=i18n("How pitch (F0) is estimated. RMVPE is the usual choice. PM is faster on CPU but less accurate. FCPE is another neural estimator.")),
+                            sg.Radio("pm", "f0method", key="pm", default=data.get("pm", False), enable_events=True, tooltip=i18n("Praat/Parselmouth autocorrelation. Light on CPU, more errors and muted notes.")),
+                            sg.Radio("rmvpe", "f0method", key="rmvpe", default=data.get("rmvpe", True), enable_events=True, tooltip=i18n("RMVPE neural pitch tracker. Best quality for speech and singing; recommended default.")),
+                            sg.Radio("fcpe", "f0method", key="fcpe", default=data.get("fcpe", False), enable_events=True, tooltip=i18n("FCPE neural pitch tracker. Another GPU-friendly F0 estimator; try it if RMVPE artifacts bother you.")),
                         ],
                     ],
                     title=i18n("General settings"),
@@ -249,38 +249,38 @@ class GUI:
                 sg.Frame(
                     layout=[
                         [
-                            sg.Text(i18n("Sample length")),
-                            sg.Slider(range=(0.02, 1.5), key="block_time", resolution=0.01, orientation="h", default_value=data.get("block_time", 0.25), enable_events=True),
+                            sg.Text(i18n("Sample length"), tooltip=i18n("Chunk size in seconds processed each callback. Smaller is lower latency but harder on the GPU and more likely to glitch. Larger is smoother with more delay.")),
+                            sg.Slider(range=(0.02, 1.5), key="block_time", resolution=0.01, orientation="h", default_value=data.get("block_time", 0.25), enable_events=True, tooltip=i18n("Chunk size in seconds processed each callback. Smaller is lower latency but harder on the GPU and more likely to glitch. Larger is smoother with more delay.")),
                         ],
                         # [
                         #     sg.Text("Device latency"),
                         #     sg.Slider(range=(0, 1), key="device_latency", resolution=0.001, orientation="h", default_value=data.get("device_latency", 0.1), enable_events=True),
                         # ],
                         [
-                            sg.Text(i18n("Fade length")),
-                            sg.Slider(range=(0.01, 0.15), key="crossfade_length", resolution=0.01, orientation="h", default_value=data.get("crossfade_length", 0.05), enable_events=True),
+                            sg.Text(i18n("Fade length"), tooltip=i18n("SOLA crossfade overlap between chunks, in seconds. Longer fades hide seams; they also add delay.")),
+                            sg.Slider(range=(0.01, 0.15), key="crossfade_length", resolution=0.01, orientation="h", default_value=data.get("crossfade_length", 0.05), enable_events=True, tooltip=i18n("SOLA crossfade overlap between chunks, in seconds. Longer fades hide seams; they also add delay.")),
                         ],
                         [
-                            sg.Text(i18n("Extra inference time")),
-                            sg.Slider(range=(0.05, 5.00), key="extra_time", resolution=0.01, orientation="h", default_value=data.get("extra_time", 2.5), enable_events=True),
+                            sg.Text(i18n("Extra inference time"), tooltip=i18n("Extra past audio (seconds) given to the model as context before the current chunk. More can improve quality; it uses more compute and adds delay.")),
+                            sg.Slider(range=(0.05, 5.00), key="extra_time", resolution=0.01, orientation="h", default_value=data.get("extra_time", 2.5), enable_events=True, tooltip=i18n("Extra past audio (seconds) given to the model as context before the current chunk. More can improve quality; it uses more compute and adds delay.")),
                         ],
                         [
-                            sg.Checkbox(i18n("Input noise reduction"), key="I_noise_reduce", enable_events=True),
-                            sg.Checkbox(i18n("Output noise reduction"), key="O_noise_reduce", enable_events=True),
+                            sg.Checkbox(i18n("Input noise reduction"), key="I_noise_reduce", enable_events=True, tooltip=i18n("Spectral gate on the microphone before conversion. Cuts hiss; adds a little delay.")),
+                            sg.Checkbox(i18n("Output noise reduction"), key="O_noise_reduce", enable_events=True, tooltip=i18n("Spectral gate on the converted voice. Can tame residual hiss after conversion.")),
                         ],
                     ],
                     title=i18n("Performance settings"),
                 ),
             ],
             [
-                sg.Button(i18n("Start audio conversion"), key="start_vc"),
-                sg.Button(i18n("Stop audio conversion"), key="stop_vc"),
-                sg.Checkbox(i18n("Debug"), key="debug", default=data.get("debug", False), enable_events=True),
-                sg.Radio(i18n("Input voice monitor"), "function", key="im", default=False, enable_events=True),
-                sg.Radio(i18n("Output converted voice"), "function", key="vc", default=True, enable_events=True),
-                sg.Text(i18n("Algorithmic delays(ms):")),
+                sg.Button(i18n("Start audio conversion"), key="start_vc", tooltip=i18n("Load the selected model and start the realtime audio stream.")),
+                sg.Button(i18n("Stop audio conversion"), key="stop_vc", tooltip=i18n("Stop the audio stream. The model stays in memory until you start again or close the window.")),
+                sg.Checkbox(i18n("Debug"), key="debug", default=data.get("debug", False), enable_events=True, tooltip=i18n("When checked, print SOLA offset and per-chunk inference time to the console.")),
+                sg.Radio(i18n("Input voice monitor"), "function", key="im", default=False, enable_events=True, tooltip=i18n("Hear your microphone (after optional input noise reduction) instead of the converted voice.")),
+                sg.Radio(i18n("Output converted voice"), "function", key="vc", default=True, enable_events=True, tooltip=i18n("Hear the converted voice. This is the normal realtime conversion mode.")),
+                sg.Text(i18n("Algorithmic delays(ms):"), tooltip=i18n("Estimated extra delay from the audio device, chunk size, fade, and input noise reduction. Not the same as inference time.")),
                 sg.Text("0", key="delay_time"),
-                sg.Text(i18n("Inference time (ms):")),
+                sg.Text(i18n("Inference time (ms):"), tooltip=i18n("How long the last chunk took to convert. Keep this below Sample length or you will hear dropouts.")),
                 sg.Text("0", key="infer_time"),
             ],
         ]
