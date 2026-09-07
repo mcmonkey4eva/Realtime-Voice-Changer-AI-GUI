@@ -1,3 +1,26 @@
+# Realtime Voice Changer AI GUI
+
+This project is a rework of Retrieval-based-Voice-Conversion-WebUI's integrated realtime GUI, specifically focused on fixing up the code and making it more generally usable.
+
+The goal here is I wanted to use this as my personal baseline voice changer, to replace commercial tools like Voicemod. There were several basic changes needed to accomplish this.
+
+I also changed the text to English, because, well, I don't speak Chinese.
+
+This remains under the original MIT License.  The authors of the original library are free to steal and upstream my changes if they wish.
+
+Large amounts of this were made with AI coding agents and not overly reviewed under than my practical-usage testing.
+
+
+
+
+
+
+
+
+### Original Readme Follows:
+
+-----------------------------------------------
+
 <div align="center">
 
 <h1>Retrieval-based-Voice-Conversion-WebUI</h1>
