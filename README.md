@@ -10,7 +10,17 @@ This remains under the original MIT License.  The authors of the original librar
 
 Large amounts of this were made with AI coding agents and not overly reviewed under than my practical-usage testing.
 
+I have not currently spent any time towards making this easier for anyone that's not me other than wherever your needs happen to overlap my own.
 
+## Usage
+
+- Clone the repo
+- Follow the venv and pip install instructions in the original readme below
+- Run `go-realtime_gui.bat` on Windows to run it
+    - On Linux use a terminal to source the venv and `python realtime_gui.py`
+- Probably just google 'rvc voice downloads'
+    - It'll give you shady `.pth` and `.index` files, shove them in folders
+    - Have a root folder for models, and put all your models as direct subfolders, with the .pth and .index inside the subfolder, one subfolder per voice.
 
 
 
