@@ -93,7 +93,8 @@ class GUI:
         self.gui_config = GUIConfig()
         self.config = Config()
         print(f"RVC_CUDA_GRAPH={os.environ.get('RVC_CUDA_GRAPH', '0')}")
-        self.function = "vc"
+        self.rvc = None
+        self.change_voice = False
         self.delay_time = 0
         self.hostapis = None
         self.input_devices = None
@@ -273,11 +274,9 @@ class GUI:
                 ),
             ],
             [
-                sg.Button(i18n("Start audio conversion"), key="start_vc", tooltip=i18n("Load the selected model and start the realtime audio stream.")),
-                sg.Button(i18n("Stop audio conversion"), key="stop_vc", tooltip=i18n("Stop the audio stream. The model stays in memory until you start again or close the window.")),
+                sg.Checkbox(i18n("Run Audio"), key="run_audio", default=False, enable_events=True, tooltip=i18n("When checked, audio from the input device is sent to the output. Uncheck to stop all audio.")),
+                sg.Checkbox(i18n("Change Voice"), key="change_voice", default=True, enable_events=True, tooltip=i18n("When checked with Run Audio, convert with the selected model. When unchecked, the input is forwarded to the output with low latency. Does not restart capture if audio is already running.")),
                 sg.Checkbox(i18n("Debug"), key="debug", default=data.get("debug", False), enable_events=True, tooltip=i18n("When checked, print SOLA offset and per-chunk inference time to the console.")),
-                sg.Radio(i18n("Input voice monitor"), "function", key="im", default=False, enable_events=True, tooltip=i18n("Hear your microphone (after optional input noise reduction) instead of the converted voice.")),
-                sg.Radio(i18n("Output converted voice"), "function", key="vc", default=True, enable_events=True, tooltip=i18n("Hear the converted voice. This is the normal realtime conversion mode.")),
                 sg.Text(i18n("Algorithmic delays(ms):"), tooltip=i18n("Estimated extra delay from the audio device, chunk size, fade, and input noise reduction. Not the same as inference time.")),
                 sg.Text("0", key="delay_time"),
                 sg.Text(i18n("Inference time (ms):"), tooltip=i18n("How long the last chunk took to convert. Keep this below Sample length or you will hear dropouts.")),
@@ -290,7 +289,6 @@ class GUI:
         self.event_handler()
 
     def event_handler(self):
-        global flag_vc
         while True:
             event, values = self.window.read()
             if event == sg.WINDOW_CLOSED:
@@ -315,31 +313,20 @@ class GUI:
                     self.gui_config.sg_output_device = self.output_devices[0]
                 self.window["sg_output_device"].Update(values=self.output_devices)
                 self.window["sg_output_device"].Update(value=self.gui_config.sg_output_device)
-            if event == "start_vc" and not flag_vc:
-                if self.set_values(values) == True:
-                    print(i18n("CUDA available: %s") % torch.cuda.is_available())
-                    self.start_vc()
-                    gui_settings.save(gui_settings.from_values(values))
-                    if self.stream is not None:
-                        self.delay_time = self.stream.latency[-1] + values["block_time"] + values["crossfade_length"] + 0.01
-                    if values["I_noise_reduce"]:
-                        self.delay_time += min(values["crossfade_length"], 0.04)
-                    self.window["sr_stream"].update(self.gui_config.samplerate)
-                    self.window["delay_time"].update(int(np.round(self.delay_time * 1000)))
             # Parameter hot update
             if event == "threhold":
                 self.gui_config.threhold = values["threhold"]
             elif event == "pitch":
                 self.gui_config.pitch = values["pitch"]
-                if hasattr(self, "rvc"):
+                if self.rvc is not None:
                     self.rvc.change_key(values["pitch"])
             elif event == "formant":
                 self.gui_config.formant = values["formant"]
-                if hasattr(self, "rvc"):
+                if self.rvc is not None:
                     self.rvc.change_formant(values["formant"])
             elif event == "index_rate":
                 self.gui_config.index_rate = values["index_rate"]
-                if hasattr(self, "rvc"):
+                if self.rvc is not None:
                     self.rvc.change_index_rate(values["index_rate"])
             elif event == "rms_mix_rate":
                 self.gui_config.rms_mix_rate = values["rms_mix_rate"]
@@ -352,8 +339,11 @@ class GUI:
                     self.window["delay_time"].update(int(np.round(self.delay_time * 1000)))
             elif event == "O_noise_reduce":
                 self.gui_config.O_noise_reduce = values["O_noise_reduce"]
-            elif event in ["vc", "im"]:
-                self.function = event
+            elif event == "run_audio" or event == "change_voice":
+                if not self.apply_audio_state(values, values["run_audio"], values["change_voice"]):
+                    self.window[event].update(False)
+                elif event == "run_audio" and values["run_audio"]:
+                    gui_settings.save(gui_settings.from_values(values))
             elif event == "model_root" or event == "select_model_root":
                 candidates = [values.get("select_model_root") if event == "select_model_root" else None, values.get("model_root")]
                 try:
@@ -378,26 +368,71 @@ class GUI:
             elif event == "debug":
                 self.gui_config.debug = values["debug"]
                 gui_settings.update(debug=values["debug"])
-            elif event == "stop_vc" or event != "start_vc":
+            else:
                 # Other parameters do not support hot update
                 self.stop_stream()
+                self.window["run_audio"].update(False)
 
-    def set_values(self, values):
+    def apply_audio_state(self, values, run, convert):
+        global flag_vc
+        if not run:
+            self.stop_stream()
+            return True
+        if convert:
+            model_files = self.scan_model_root(values["model_root"])
+            pth_path, index_path = model_files.get(values.get("model_identity", ""), ("", ""))
+            ready = self.rvc is not None and hasattr(self, "input_wav") and self.input_wav.shape[0] == self.extra_frame + self.crossfade_frame + self.sola_search_frame + self.block_frame and self.rvc.pth_path == pth_path and self.rvc.index_path == index_path and self.gui_config.block_time == values["block_time"] and self.gui_config.crossfade_time == values["crossfade_length"] and self.gui_config.extra_time == values["extra_time"] and self.gui_config.sr_type == ("sr_model" if values["sr_model"] else "sr_device")
+            if not ready:
+                if not self.set_values(values, require_model=True):
+                    return False
+                print(i18n("CUDA available: %s") % torch.cuda.is_available())
+                self.start_vc(reuse_stream=flag_vc)
+            self.change_voice = True
+            if not flag_vc:
+                if ready and not self.set_values(values, require_model=False):
+                    return False
+                self.start_stream()
+        else:
+            self.change_voice = False
+            if not flag_vc:
+                if not self.set_values(values, require_model=False):
+                    return False
+                self.prepare_stream_params()
+                self.start_stream()
+        if self.stream is not None:
+            if self.change_voice:
+                self.delay_time = self.stream.latency[-1] + values["block_time"] + values["crossfade_length"] + 0.01
+                if values["I_noise_reduce"]:
+                    self.delay_time += min(values["crossfade_length"], 0.04)
+            else:
+                self.delay_time = self.stream.latency[-1] + values["block_time"]
+            self.window["sr_stream"].update(self.gui_config.samplerate)
+            self.window["delay_time"].update(int(np.round(self.delay_time * 1000)))
+        return True
+
+    def prepare_stream_params(self):
+        self.gui_config.samplerate = self.get_device_samplerate()
+        self.gui_config.channels = self.get_device_channels()
+        self.zc = self.gui_config.samplerate // 100
+        self.block_frame = int(np.round(self.gui_config.block_time * self.gui_config.samplerate / self.zc)) * self.zc
+
+    def set_values(self, values, require_model=True):
         model_files = self.scan_model_root(values["model_root"])
         pth_path, index_path = model_files.get(values.get("model_identity", ""), ("", ""))
-        if len(pth_path.strip()) == 0:
-            sg.popup(i18n("Please choose the .pth file"))
-            return False
-        if len(index_path.strip()) == 0:
-            sg.popup(i18n("Please choose the .index file"))
-            return False
-        pattern = re.compile("[^\x00-\x7F]+")
-        if pattern.findall(pth_path):
-            sg.popup(i18n("The .pth file path cannot contain Chinese characters"))
-            return False
-        if pattern.findall(index_path):
-            sg.popup(i18n("The index file path cannot contain Chinese characters"))
-            return False
+        if require_model:
+            if len(pth_path.strip()) == 0:
+                sg.popup(i18n("Please choose the .pth file"))
+                return False
+            if len(index_path.strip()) == 0:
+                sg.popup(i18n("Please choose the .index file"))
+                return False
+            pattern = re.compile("[^\x00-\x7F]+")
+            if pattern.findall(pth_path):
+                sg.popup(i18n("The .pth file path cannot contain Chinese characters"))
+                return False
+            if pattern.findall(index_path):
+                sg.popup(i18n("The index file path cannot contain Chinese characters"))
+                return False
         self.set_devices(values["sg_input_device"], values["sg_output_device"])
         # self.device_latency = values["device_latency"]
         self.gui_config.sg_hostapi = values["sg_hostapi"]
@@ -421,15 +456,18 @@ class GUI:
         self.gui_config.debug = values["debug"]
         return True
 
-    def start_vc(self):
+    def start_vc(self, reuse_stream=False):
         print("Starting voice conversion (loading model)...")
         _start_t0 = time.perf_counter()
         torch.cuda.empty_cache()
-        self.rvc = rvc_for_realtime.RVC(self.gui_config.pitch, self.gui_config.formant, self.gui_config.pth_path, self.gui_config.index_path, self.gui_config.index_rate, self.config, self.rvc if hasattr(self, "rvc") else None)
-        self.gui_config.samplerate = self.rvc.tgt_sr if self.gui_config.sr_type == "sr_model" else self.get_device_samplerate()
-        self.gui_config.channels = self.get_device_channels()
-        self.zc = self.gui_config.samplerate // 100
-        self.block_frame = int(np.round(self.gui_config.block_time * self.gui_config.samplerate / self.zc)) * self.zc
+        self.rvc = rvc_for_realtime.RVC(self.gui_config.pitch, self.gui_config.formant, self.gui_config.pth_path, self.gui_config.index_path, self.gui_config.index_rate, self.config, self.rvc)
+        if not reuse_stream:
+            self.gui_config.samplerate = self.rvc.tgt_sr if self.gui_config.sr_type == "sr_model" else self.get_device_samplerate()
+            self.gui_config.channels = self.get_device_channels()
+            self.zc = self.gui_config.samplerate // 100
+            self.block_frame = int(np.round(self.gui_config.block_time * self.gui_config.samplerate / self.zc)) * self.zc
+        else:
+            self.zc = self.gui_config.samplerate // 100
         self.block_frame_16k = 160 * self.block_frame // self.zc
         self.crossfade_frame = int(np.round(self.gui_config.crossfade_time * self.gui_config.samplerate / self.zc)) * self.zc
         self.sola_buffer_frame = min(self.crossfade_frame, 4 * self.zc)
@@ -456,7 +494,6 @@ class GUI:
         # stays eager while resampling and RVC inference still use graphs.
         self.tg = TorchGate(sr=self.gui_config.samplerate, n_fft=4 * self.zc, prop_decrease=0.9).to(self.config.device)
         self.prewarm_cuda_graph()
-        self.start_stream()
         print(f"Voice conversion started in {time.perf_counter() - _start_t0:.1f}s")
 
     def prewarm_cuda_graph(self):
@@ -508,12 +545,15 @@ class GUI:
 
     def stop_stream(self):
         global flag_vc
-        if flag_vc:
-            flag_vc = False
-            if self.stream is not None:
+        flag_vc = False
+        if self.stream is not None:
+            try:
                 self.stream.abort()
                 self.stream.close()
-                self.stream = None
+            except:
+                pass
+            self.stream = None
+        self.change_voice = False
 
     def audio_callback(self, indata, outdata, frames, times, status):
         """
@@ -521,6 +561,17 @@ class GUI:
         """
         global flag_vc
         start_time = time.perf_counter()
+        if not flag_vc:
+            outdata[:] = 0
+            return
+        if not self.change_voice:
+            if indata.shape == outdata.shape:
+                outdata[:] = indata
+            else:
+                mono = librosa.to_mono(indata.T)
+                outdata[:] = np.repeat(mono.reshape(-1, 1), outdata.shape[1], axis=1)
+            self.window["infer_time"].update(int((time.perf_counter() - start_time) * 1000))
+            return
         indata = librosa.to_mono(indata.T)
         if self.gui_config.threhold > -60:
             indata = np.append(self.rms_buffer, indata)
@@ -550,21 +601,16 @@ class GUI:
             resample_input = self.input_wav[-indata.shape[0] - 2 * self.zc :]
             self.input_wav_res[-160 * (indata.shape[0] // self.zc + 1) :] = run_cuda_graph(self.resampler, "realtime-input-resample", lambda audio: self.resampler(audio), resample_input)[160:]
         # infer
-        if self.function == "vc":
-            infer_wav = self.rvc.infer(self.input_wav_res, self.block_frame_16k, self.skip_head, self.return_length, self.gui_config.f0method)
-            if self.resampler2 is not None:
-                infer_wav = run_cuda_graph(self.resampler2, "realtime-output-resample", lambda audio: self.resampler2(audio), infer_wav)
-        elif self.gui_config.I_noise_reduce:
-            infer_wav = self.input_wav_denoise[self.extra_frame :].clone()
-        else:
-            infer_wav = self.input_wav[self.extra_frame :].clone()
+        infer_wav = self.rvc.infer(self.input_wav_res, self.block_frame_16k, self.skip_head, self.return_length, self.gui_config.f0method)
+        if self.resampler2 is not None:
+            infer_wav = run_cuda_graph(self.resampler2, "realtime-output-resample", lambda audio: self.resampler2(audio), infer_wav)
         # output noise reduction
-        if self.gui_config.O_noise_reduce and self.function == "vc":
+        if self.gui_config.O_noise_reduce:
             self.output_buffer[: -self.block_frame] = self.output_buffer[self.block_frame :].clone()
             self.output_buffer[-self.block_frame :] = infer_wav[-self.block_frame :]
             infer_wav = self.tg(infer_wav.unsqueeze(0), self.output_buffer.unsqueeze(0)).squeeze(0)
         # volume envelop mixing
-        if self.gui_config.rms_mix_rate < 1 and self.function == "vc":
+        if self.gui_config.rms_mix_rate < 1:
             if self.gui_config.I_noise_reduce:
                 input_wav = self.input_wav_denoise[self.extra_frame :]
             else:
