@@ -95,6 +95,7 @@ class GUI:
         print(f"RVC_CUDA_GRAPH={os.environ.get('RVC_CUDA_GRAPH', '0')}")
         self.rvc = None
         self.change_voice = False
+        self.low_latency_stream = False
         self.delay_time = 0
         self.hostapis = None
         self.input_devices = None
@@ -275,7 +276,7 @@ class GUI:
             ],
             [
                 sg.Checkbox(i18n("Run Audio"), key="run_audio", default=False, enable_events=True, tooltip=i18n("When checked, audio from the input device is sent to the output. Uncheck to stop all audio.")),
-                sg.Checkbox(i18n("Change Voice"), key="change_voice", default=True, enable_events=True, tooltip=i18n("When checked with Run Audio, convert with the selected model. When unchecked, the input is forwarded to the output with low latency. Does not restart capture if audio is already running.")),
+                sg.Checkbox(i18n("Change Voice"), key="change_voice", default=True, enable_events=True, tooltip=i18n("When checked with Run Audio, convert with the selected model. When unchecked, the input is forwarded to the output with low latency.")),
                 sg.Checkbox(i18n("Debug"), key="debug", default=data.get("debug", False), enable_events=True, tooltip=i18n("When checked, print SOLA offset and per-chunk inference time to the console.")),
                 sg.Text(i18n("Algorithmic delays(ms):"), tooltip=i18n("Estimated extra delay from the audio device, chunk size, fade, and input noise reduction. Not the same as inference time.")),
                 sg.Text("0", key="delay_time"),
@@ -385,6 +386,8 @@ class GUI:
             if not ready:
                 if not self.set_values(values, require_model=True):
                     return False
+                if flag_vc and self.low_latency_stream:
+                    self.stop_stream()
                 print(i18n("CUDA available: %s") % torch.cuda.is_available())
                 self.start_vc(reuse_stream=flag_vc)
             self.change_voice = True
@@ -394,18 +397,21 @@ class GUI:
                 self.start_stream()
         else:
             self.change_voice = False
+            if flag_vc and not self.low_latency_stream:
+                self.stop_stream()
             if not flag_vc:
                 if not self.set_values(values, require_model=False):
                     return False
                 self.prepare_stream_params()
-                self.start_stream()
+                self.start_stream(low_latency=True)
+            self.window["infer_time"].update(0)
         if self.stream is not None:
             if self.change_voice:
                 self.delay_time = self.stream.latency[-1] + values["block_time"] + values["crossfade_length"] + 0.01
                 if values["I_noise_reduce"]:
                     self.delay_time += min(values["crossfade_length"], 0.04)
             else:
-                self.delay_time = self.stream.latency[-1] + values["block_time"]
+                self.delay_time = float(self.stream.latency[0]) + float(self.stream.latency[-1])
             self.window["sr_stream"].update(self.gui_config.samplerate)
             self.window["delay_time"].update(int(np.round(self.delay_time * 1000)))
         return True
@@ -414,7 +420,7 @@ class GUI:
         self.gui_config.samplerate = self.get_device_samplerate()
         self.gui_config.channels = self.get_device_channels()
         self.zc = self.gui_config.samplerate // 100
-        self.block_frame = int(np.round(self.gui_config.block_time * self.gui_config.samplerate / self.zc)) * self.zc
+        self.block_frame = max(64, self.gui_config.samplerate // 200)
 
     def set_values(self, values, require_model=True):
         model_files = self.scan_model_root(values["model_root"])
@@ -532,15 +538,19 @@ class GUI:
             self.rvc.cache_pitch.zero_()
             self.rvc.cache_pitchf.zero_()
 
-    def start_stream(self):
+    def start_stream(self, low_latency=False):
         global flag_vc
         if not flag_vc:
             flag_vc = True
+            self.low_latency_stream = low_latency
             if "WASAPI" in self.gui_config.sg_hostapi and self.gui_config.sg_wasapi_exclusive:
                 extra_settings = sd.WasapiSettings(exclusive=True)
             else:
                 extra_settings = None
-            self.stream = sd.Stream(callback=self.audio_callback, blocksize=self.block_frame, samplerate=self.gui_config.samplerate, channels=self.gui_config.channels, dtype="float32", extra_settings=extra_settings)
+            stream_kw = dict(callback=self.audio_callback, blocksize=self.block_frame, samplerate=self.gui_config.samplerate, channels=self.gui_config.channels, dtype="float32", extra_settings=extra_settings)
+            if low_latency:
+                stream_kw["latency"] = "low"
+            self.stream = sd.Stream(**stream_kw)
             self.stream.start()
 
     def stop_stream(self):
@@ -560,7 +570,6 @@ class GUI:
         Audio callback
         """
         global flag_vc
-        start_time = time.perf_counter()
         if not flag_vc:
             outdata[:] = 0
             return
@@ -570,8 +579,8 @@ class GUI:
             else:
                 mono = librosa.to_mono(indata.T)
                 outdata[:] = np.repeat(mono.reshape(-1, 1), outdata.shape[1], axis=1)
-            self.window["infer_time"].update(int((time.perf_counter() - start_time) * 1000))
             return
+        start_time = time.perf_counter()
         indata = librosa.to_mono(indata.T)
         if self.gui_config.threhold > -60:
             indata = np.append(self.rms_buffer, indata)
