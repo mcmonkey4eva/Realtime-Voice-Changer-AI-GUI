@@ -64,7 +64,7 @@ def savee(ckpt, sr, if_f0, name, epoch, version, hps):
         if speaker_info:
             opt["speaker_info"] = speaker_info
         torch.save(opt, "assets/weights/%s.pth" % name)
-        return i18n("成功")
+        return i18n("Success")
     except:
         return traceback.format_exc()
 
@@ -206,7 +206,7 @@ def extract_small_model(path, name, sr, if_f0, info, version):
                     32000,
                 ]
         if info == "":
-            info = i18n("从训练检查点提取的模型")
+            info = i18n("Model extracted from a training checkpoint")
         opt["info"] = info
         opt["version"] = version
         opt["sr"] = sr
@@ -214,7 +214,7 @@ def extract_small_model(path, name, sr, if_f0, info, version):
         if speaker_info:
             opt["speaker_info"] = speaker_info
         torch.save(opt, "assets/weights/%s.pth" % name)
-        return i18n("成功")
+        return i18n("Success")
     except:
         return traceback.format_exc()
 
@@ -226,7 +226,7 @@ def change_info(path, info, name):
         if name == "":
             name = os.path.basename(path)
         torch.save(ckpt, "assets/weights/%s" % name)
-        return i18n("成功")
+        return i18n("Success")
     except:
         return traceback.format_exc()
 
@@ -258,7 +258,7 @@ def merge(path1, path2, alpha1, sr, f0, info, name, version):
         else:
             ckpt2 = ckpt2["weight"]
         if sorted(list(ckpt1.keys())) != sorted(list(ckpt2.keys())):
-            return i18n("模型融合失败：两个模型的结构不一致")
+            return i18n("Model merge failed: the two model architectures do not match")
         opt = OrderedDict()
         opt["weight"] = {}
         for key in ckpt1.keys():
@@ -282,12 +282,12 @@ def merge(path1, path2, alpha1, sr, f0, info, name, version):
         elif(sr=="32k"):opt["config"] = [513, 32, 192, 192, 768, 2, 6, 3, 0, "1", [3, 7, 11], [[1, 3, 5], [1, 3, 5], [1, 3, 5]], [10, 4, 2, 2, 2], 512, [16, 16, 4, 4,4], 109, 256, 32000]
         """
         opt["sr"] = sr
-        opt["f0"] = 1 if f0 == i18n("是") else 0
+        opt["f0"] = 1 if f0 == i18n("Yes") else 0
         opt["version"] = version
         opt["info"] = info
         if speaker_info1 and speaker_info1 == speaker_info2:
             opt["speaker_info"] = speaker_info1
         torch.save(opt, "assets/weights/%s.pth" % name)
-        return i18n("成功")
+        return i18n("Success")
     except:
         return traceback.format_exc()

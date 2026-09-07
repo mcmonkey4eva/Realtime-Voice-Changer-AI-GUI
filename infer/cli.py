@@ -260,10 +260,10 @@ def main(argv=None):
 
     i18n = I18nAuto()
     config = create_config()
-    print(i18n("当前设备：%s | 推理精度：%s") % (config.device, config.dtype))
-    print("%s: %s" % (i18n("选择模型"), model_name))
-    print("%s: %s" % (i18n("说话人ID（0~109）"), speaker_id))
-    print("%s: %s" % (i18n("选择索引"), index_path or i18n("未使用")))
+    print(i18n("Current device: %s | Inference precision: %s") % (config.device, config.dtype))
+    print("%s: %s" % (i18n("Select model"), model_name))
+    print("%s: %s" % (i18n("Speaker ID (0-109)"), speaker_id))
+    print("%s: %s" % (i18n("Select index"), index_path or i18n("Not used")))
 
     vc = VC(config)
     vc.get_vc(model_name)

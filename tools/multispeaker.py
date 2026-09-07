@@ -58,7 +58,7 @@ def _manifest_entry(path, speaker_name, speaker_id, repeat, index):
 def build_manifest_from_root(root):
     root = os.path.abspath(str(root or "").strip())
     if not os.path.isdir(root):
-        raise ManifestError("多说话人训练集总文件夹不存在：%s", root)
+        raise ManifestError("Multi-speaker dataset root does not exist: %s", root)
     entries = []
     invalid = []
     names_by_id = {}
@@ -68,7 +68,7 @@ def build_manifest_from_root(root):
         if os.path.isdir(os.path.join(root, name))
     ]
     if not child_dirs:
-        raise ManifestError("多说话人训练集总文件夹中没有直接子文件夹")
+        raise ManifestError("The multi-speaker dataset root has no direct subfolders")
     for child in child_dirs:
         name = os.path.basename(child)
         match = SPEAKER_DIR_RE.match(name)
@@ -107,11 +107,11 @@ def build_manifest_from_root(root):
             )
     if invalid:
         raise ManifestError(
-            "多说话人子文件夹无效（格式应为名称_ID_重复次数、ID为0~109、重复次数为正整数、同一ID的名称需一致且目录需有音频）：%s",
+            "Invalid multi-speaker subfolders (expected Name_ID_Repeat, ID 0-109, a positive repeat count, one consistent name per ID, and at least one audio file): %s",
             ", ".join(invalid),
         )
     if not entries:
-        raise ManifestError("多说话人训练集总文件夹中没有有效音频")
+        raise ManifestError("The multi-speaker dataset root contains no valid audio")
     return {
         "version": MANIFEST_VERSION,
         "source": "folder_scan",
@@ -182,7 +182,7 @@ def build_manifest_from_rows(rows, root=""):
                 )
             )
     if not entries:
-        raise ManifestError("没有有效的多说话人训练集行")
+        raise ManifestError("There are no valid multi-speaker dataset rows")
     manifest = {
         "version": MANIFEST_VERSION,
         "source": "helper",
@@ -209,12 +209,12 @@ def write_manifest(exp_dir, manifest):
 def load_manifest(exp_dir):
     path = os.path.join(exp_dir, "multispeaker_manifest.json")
     if not os.path.isfile(path):
-        raise ManifestError("多说话人训练集清单不存在，请先提交辅助清单或填写总文件夹")
+        raise ManifestError("The multi-speaker manifest does not exist. Submit it from the helper tab or enter a dataset root first")
     with open(path, "r", encoding="utf8") as file:
         manifest = json.load(file)
     entries = manifest.get("entries") if isinstance(manifest, dict) else None
     if not isinstance(entries, list) or not entries:
-        raise ManifestError("多说话人训练集清单没有有效音频")
+        raise ManifestError("The multi-speaker manifest contains no valid audio")
     seen = set()
     names_by_id = {}
     for entry in entries:
@@ -225,7 +225,7 @@ def load_manifest(exp_dir):
             repeat = int(entry["repeat"])
             output_key = str(entry["output_key"])
         except (KeyError, TypeError, ValueError):
-            raise ManifestError("多说话人训练集清单格式错误")
+            raise ManifestError("The multi-speaker manifest format is invalid")
         inconsistent = (
             speaker_id in names_by_id and names_by_id[speaker_id] != speaker_name
         )
@@ -241,9 +241,9 @@ def load_manifest(exp_dir):
             or not output_key
             or inconsistent
         ):
-            raise ManifestError("多说话人训练集清单包含无效条目：%s", path_value)
+            raise ManifestError("The multi-speaker manifest contains an invalid entry: %s", path_value)
         if output_key in seen:
-            raise ManifestError("多说话人训练集清单存在重复输出标识：%s", output_key)
+            raise ManifestError("The multi-speaker manifest contains a duplicate output key: %s", output_key)
         seen.add(output_key)
         names_by_id[speaker_id] = speaker_name
     manifest["speakers"] = [

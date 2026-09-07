@@ -133,10 +133,10 @@ def main():
 
     if n_gpus < 1:
         # patch to unblock people without gpus. there is probably a better way.
-        print(i18n("未检测到可用显卡，将使用CPU训练，耗时可能较长"))
+        print(i18n("No supported GPU detected; training on the CPU may take much longer"))
         n_gpus = 1
     logger = utils.get_logger(hps.model_dir)
-    logger.info(i18n("训练设备规则选择的精度：%s"), training_dtype)
+    logger.info(i18n("Training precision selected by device rules: %s"), training_dtype)
     if single_cuda:
         run(0, 1, hps, logger, False)
         return
@@ -248,7 +248,7 @@ def run(rank, n_gpus, hps, logger, use_ddp):
             utils.latest_checkpoint_path(hps.model_dir, "D_*.pth"), net_d, optim_d
         )  # D多半加载没事
         if rank == 0:
-            logger.info(i18n("已恢复判别器检查点"))
+            logger.info(i18n("Restored discriminator checkpoint"))
         # _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g, optim_g,load_opt=0)
         _, _, _, epoch_str = utils.load_checkpoint(
             utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g, optim_g
@@ -262,11 +262,11 @@ def run(rank, n_gpus, hps, logger, use_ddp):
         global_step = 0
         if hps.pretrainG != "":
             if rank == 0:
-                logger.info(i18n("已加载生成器预训练模型：%s") % hps.pretrainG)
+                logger.info(i18n("Loaded generator pretrained model: %s") % hps.pretrainG)
             logger.info(load_pretrained_generator(net_g, hps.pretrainG))
         if hps.pretrainD != "":
             if rank == 0:
-                logger.info(i18n("已加载判别器预训练模型：%s") % hps.pretrainD)
+                logger.info(i18n("Loaded discriminator pretrained model: %s") % hps.pretrainD)
             if hasattr(net_d, "module"):
                 logger.info(
                     net_d.module.load_state_dict(
@@ -530,7 +530,7 @@ def train_and_evaluate(
             if global_step % hps.train.log_interval == 0:
                 lr = optim_g.param_groups[0]["lr"]
                 logger.info(
-                    i18n("训练轮次：{} [{:.0f}%]").format(
+                    i18n("Training epoch: {} [{:.0f}%]").format(
                         epoch, 100.0 * batch_idx / len(train_loader)
                     )
                 )
@@ -625,7 +625,7 @@ def train_and_evaluate(
             else:
                 ckpt = net_g.state_dict()
             logger.info(
-                i18n("正在保存检查点 %s_e%s：%s")
+                i18n("Saving checkpoint %s_e%s: %s")
                 % (
                     hps.name,
                     epoch,
@@ -642,16 +642,16 @@ def train_and_evaluate(
             )
 
     if rank == 0:
-        logger.info(i18n("====> 轮次：{} {}").format(epoch, epoch_recorder.record()))
+        logger.info(i18n("====> Epoch: {} {}").format(epoch, epoch_recorder.record()))
     if epoch >= hps.total_epoch and rank == 0:
-        logger.info(i18n("训练已完成，正在保存最终模型"))
+        logger.info(i18n("Training completed; saving the final model"))
 
         if hasattr(net_g, "module"):
             ckpt = net_g.module.state_dict()
         else:
             ckpt = net_g.state_dict()
         logger.info(
-            i18n("正在保存最终检查点：%s")
+            i18n("Saving final checkpoint: %s")
             % (
                 savee(
                     ckpt, hps.sample_rate, hps.if_f0, hps.name, epoch, hps.version, hps

@@ -18,9 +18,20 @@ class I18nAuto:
             language = "en_US"
         self.language = language
         self.language_map = load_language_list(language)
+        english_map = (
+            self.language_map
+            if language == "en_US"
+            else load_language_list("en_US")
+        )
+        self.english_to_key = {value: key for key, value in english_map.items()}
 
     def __call__(self, key):
-        return self.language_map.get(key, key)
+        if key in self.language_map:
+            return self.language_map[key]
+        original = self.english_to_key.get(key)
+        if original is not None:
+            return self.language_map.get(original, key)
+        return key
 
     def __repr__(self):
         return "Use Language: " + self.language

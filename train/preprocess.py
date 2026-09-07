@@ -63,7 +63,7 @@ class PreProcess:
         tmp_max = np.abs(tmp_audio).max()
         if not np.isfinite(tmp_max) or tmp_max <= 0 or tmp_max > 2.5:
             println(
-                i18n("[数据切分][跳过] 无效或异常音频片段：%s_%s | 峰值：%s")
+                i18n("[Data slicing][Skipped] Invalid or abnormal audio segment: %s_%s | Peak: %s")
                 % (output_key, idx1, tmp_max)
             )
             return False
@@ -109,7 +109,7 @@ class PreProcess:
             self.norm_write(tmp_audio, output_key, idx1)
             if should_report(progress_index, total):
                 println(
-                    i18n("[数据切分] 进度：%s/%s | %s")
+                    i18n("[Data slicing] Progress: %s/%s | %s")
                     % (progress_index + 1, total, os.path.basename(path))
                 )
             return True
@@ -130,7 +130,7 @@ class PreProcess:
                 failed += 1
         if infos:
             println(
-                i18n("[数据切分] 子任务完成 | 成功：%s | 失败：%s")
+                i18n("[Data slicing] Worker completed | Success: %s | Failed: %s")
                 % (success, failed)
             )
 
@@ -148,7 +148,7 @@ class PreProcess:
             worker_count = max(n_p, 1)
             worker_count = min(worker_count, max(total, 1))
             println(
-                i18n("[数据切分] 待处理：%s | 进程数：%s")
+                i18n("[Data slicing] Pending: %s | Processes: %s")
                 % (total, worker_count)
             )
             if noparallel:
@@ -165,7 +165,7 @@ class PreProcess:
                 for i in range(worker_count):
                     ps[i].join()
         except Exception:
-            println(i18n("[数据切分][失败] %s") % traceback.format_exc())
+            println(i18n("[Data slicing][Failed] %s") % traceback.format_exc())
 
     def pipeline_mp_manifest(self, manifest_entries, n_p):
         infos = [
@@ -176,7 +176,7 @@ class PreProcess:
         worker_count = max(n_p, 1)
         worker_count = min(worker_count, max(total, 1))
         println(
-            i18n("[数据切分] 多说话人待处理：%s | 进程数：%s")
+            i18n("[Dataset preprocessing] Multi-speaker files: %s | Workers: %s")
             % (total, worker_count)
         )
         if noparallel:
@@ -196,7 +196,7 @@ class PreProcess:
 
 def preprocess_trainset(inp_root, sr, n_p, exp_dir, per):
     pp = PreProcess(sr, exp_dir, per)
-    println(i18n("[数据切分] 开始"))
+    println(i18n("[Data slicing] Started"))
     if manifest_path:
         try:
             manifest = load_manifest(exp_dir)
@@ -220,7 +220,7 @@ def preprocess_trainset(inp_root, sr, n_p, exp_dir, per):
                     except OSError:
                         pass
         pp.pipeline_mp_inp_dir(inp_root, n_p)
-    println(i18n("[数据切分] 完成"))
+    println(i18n("[Data slicing] Completed"))
 
 
 if __name__ == "__main__":

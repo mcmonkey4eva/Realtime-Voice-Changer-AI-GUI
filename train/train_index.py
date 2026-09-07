@@ -46,7 +46,7 @@ def newest_index(pattern):
 def speaker_scope(message, speaker_id):
     if speaker_id is None:
         return message
-    return "%s：%s | %s" % (i18n("说话人ID（0~109）"), speaker_id, message)
+    return "%s：%s | %s" % (i18n("Speaker ID (0-109)"), speaker_id, message)
 
 
 def link_added_index(added_path, speaker_id=None):
@@ -56,7 +56,7 @@ def link_added_index(added_path, speaker_id=None):
         source = os.path.abspath(added_path)
         outside_root = os.path.abspath(outside_index_root)
         if os.path.commonpath([source, outside_root]) == outside_root:
-            log(speaker_scope(i18n("[索引训练] 外部索引链接已存在：%s") % source, speaker_id))
+            log(speaker_scope(i18n("[Index training] External index link already exists: %s") % source, speaker_id))
             return
         target = os.path.abspath(
             os.path.join(outside_index_root, "%s_%s" % (exp_name, added_name))
@@ -64,7 +64,7 @@ def link_added_index(added_path, speaker_id=None):
         if os.path.lexists(target):
             try:
                 if os.path.samefile(source, target):
-                    log(speaker_scope(i18n("[索引训练] 外部索引链接已存在：%s") % target, speaker_id))
+                    log(speaker_scope(i18n("[Index training] External index link already exists: %s") % target, speaker_id))
                     return
             except (FileNotFoundError, OSError):
                 pass
@@ -73,7 +73,7 @@ def link_added_index(added_path, speaker_id=None):
             os.link(source, target)
         else:
             os.symlink(source, target)
-        log(speaker_scope(i18n("[索引训练] 已链接索引到外部目录：%s") % outside_index_root, speaker_id))
+        log(speaker_scope(i18n("[Index training] Linked index to external directory: %s") % outside_index_root, speaker_id))
     except Exception:
         log(
             speaker_scope(
@@ -85,7 +85,7 @@ def link_added_index(added_path, speaker_id=None):
 
 
 if not os.path.isdir(feature_dir) or not os.listdir(feature_dir):
-    log(i18n("[索引训练][失败] 请先进行特征提取"))
+    log(i18n("[Index training][Failed] Extract features first"))
     raise SystemExit(1)
 
 manifest_path = os.path.join(exp_dir, "multispeaker_manifest.json")
@@ -119,7 +119,7 @@ else:
     feature_groups[None] = feature_paths
 
 if not feature_groups or not any(feature_groups.values()):
-    log(i18n("[索引训练][失败] 请先进行特征提取"))
+    log(i18n("[Index training][Failed] Extract features first"))
     raise SystemExit(1)
 
 
@@ -156,13 +156,13 @@ def train_one_speaker(speaker_id, paths):
         if existing_trained_path:
             log(
                 scope(
-                    i18n("[索引训练][跳过] trained索引已存在：%s")
+                    i18n("[Index training][Skipped] trained index already exists: %s")
                     % os.path.basename(existing_trained_path)
                 )
             )
         log(
             scope(
-                i18n("[索引训练][跳过] added索引已存在：%s")
+                i18n("[Index training][Skipped] added index already exists: %s")
                 % os.path.basename(existing_added_path)
             )
         )
@@ -172,7 +172,7 @@ def train_one_speaker(speaker_id, paths):
     if big_npy.shape[0] > 200000:
         log(
             scope(
-                i18n("[索引训练] 正在将%s条特征聚类为10000个中心")
+                i18n("[Index training] Clustering %s feature vectors into 10,000 centers")
                 % big_npy.shape[0]
             )
         )
@@ -193,7 +193,7 @@ def train_one_speaker(speaker_id, paths):
             )
 
     n_ivf = max(1, min(int(16 * np.sqrt(big_npy.shape[0])), big_npy.shape[0] // 39))
-    log(scope(i18n("[索引训练] 特征形状：%s | IVF数量：%s") % (big_npy.shape, n_ivf)))
+    log(scope(i18n("[Index training] Feature shape: %s | IVF count: %s") % (big_npy.shape, n_ivf)))
     if existing_trained_path:
         trained_path = existing_trained_path
         index = faiss.read_index(trained_path)
@@ -201,7 +201,7 @@ def train_one_speaker(speaker_id, paths):
         index_ivf.nprobe = 1
         log(
             scope(
-                i18n("[索引训练][跳过] trained索引已存在：%s")
+                i18n("[Index training][Skipped] trained index already exists: %s")
                 % os.path.basename(trained_path)
             )
         )
@@ -216,18 +216,18 @@ def train_one_speaker(speaker_id, paths):
             "trained_IVF%s_Flat_nprobe_%s_%s_%s%s.index"
             % (n_ivf, index_ivf.nprobe, exp_name, version, suffix),
         )
-        log(scope(i18n("[索引训练] 正在训练索引")))
+        log(scope(i18n("[Index training] Training index")))
         index.train(big_npy)
         faiss.write_index(index, trained_path)
 
-    log(scope(i18n("[索引训练] 正在写入特征向量")))
+    log(scope(i18n("[Index training] Adding feature vectors")))
     starts = list(range(0, big_npy.shape[0], 8192))
     for batch_index, start in enumerate(starts):
         index.add(big_npy[start : start + 8192])
         if should_report(batch_index, len(starts), 10):
             log(
                 scope(
-                    i18n("[索引训练] 写入进度：%s/%s")
+                    i18n("[Index training] Write progress: %s/%s")
                     % (batch_index + 1, len(starts))
                 )
             )
@@ -241,7 +241,7 @@ def train_one_speaker(speaker_id, paths):
     )
     added_path = os.path.join(exp_dir, added_name)
     faiss.write_index(index, added_path)
-    log(scope(i18n("[索引训练] 成功构建索引：%s") % added_name))
+    log(scope(i18n("[Index training] Index built successfully: %s") % added_name))
     link_added_index(added_path, speaker_id)
 
 

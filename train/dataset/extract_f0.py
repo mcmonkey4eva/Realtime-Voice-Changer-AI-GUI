@@ -66,7 +66,7 @@ class FeatureInput(object):
 
     def compute_f0(self, path, f0_method):
         if f0_method not in ("pm", "rmvpe"):
-            raise ValueError(i18n("仅支持pm和rmvpe音高提取算法"))
+            raise ValueError(i18n("Only the pm and rmvpe pitch extraction methods are supported"))
         x = load_audio(path, self.fs)
         p_len = x.shape[0] // self.hop
         if f0_method == "pm":
@@ -92,7 +92,7 @@ class FeatureInput(object):
             if hasattr(self, "model_rmvpe") == False:
                 from infer.rmvpe import RMVPE
 
-                printt(i18n("正在加载RMVPE模型"))
+                printt(i18n("Loading RMVPE model"))
                 self.model_rmvpe = RMVPE(
                     "assets/rmvpe/rmvpe.pt", is_half=is_half, device=device
                 )
@@ -127,9 +127,9 @@ class FeatureInput(object):
         skipped = 0
         failed = 0
         if len(paths) == 0:
-            printt(i18n("[F0提取] 无待处理音频，已全部跳过"))
+            printt(i18n("[F0 extraction] No pending audio; all files were skipped"))
         else:
-            printt(i18n("[F0提取] 待处理：%s") % len(paths))
+            printt(i18n("[F0 extraction] Pending: %s") % len(paths))
             for idx, (inp_path, opt_path1, opt_path2) in enumerate(paths):
                 try:
                     if (
@@ -141,7 +141,7 @@ class FeatureInput(object):
                     featur_pit = self.compute_f0(inp_path, f0_method)
                     if featur_pit is None:
                         skipped += 1
-                        printt(i18n("音高全部为0，该音频无意义，跳过：%s") % inp_path)
+                        printt(i18n("All pitch values are zero; this audio is unusable and will be skipped: %s") % inp_path)
                         continue
                     np.save(
                         opt_path2,
@@ -157,7 +157,7 @@ class FeatureInput(object):
                     success += 1
                     if should_report(idx, len(paths), max_updates):
                         printt(
-                            i18n("[F0提取] 进度：%s/%s | 成功：%s | 跳过：%s | %s")
+                            i18n("[F0 extraction] Progress: %s/%s | Success: %s | Skipped: %s | %s")
                             % (idx + 1, len(paths), success, skipped, os.path.basename(inp_path))
                         )
                 except Exception:
@@ -167,7 +167,7 @@ class FeatureInput(object):
                         % (inp_path, traceback.format_exc())
                     )
             printt(
-                i18n("[F0提取] 完成 | 成功：%s | 跳过：%s | 失败：%s")
+                i18n("[F0 extraction] Completed | Success: %s | Skipped: %s | Failed: %s")
                 % (success, skipped, failed)
             )
 
@@ -222,9 +222,9 @@ if __name__ == "__main__":
                 max(1, (12 + n_part - 1) // n_part),
             )
         except Exception:
-            printt(i18n("[F0提取][失败] %s") % traceback.format_exc())
+            printt(i18n("[F0 extraction][Failed] %s") % traceback.format_exc())
     else:
         try:
             featureInput.go(paths, "rmvpe", 5)
         except Exception:
-            printt(i18n("[F0提取][失败] %s") % traceback.format_exc())
+            printt(i18n("[F0 extraction][Failed] %s") % traceback.format_exc())

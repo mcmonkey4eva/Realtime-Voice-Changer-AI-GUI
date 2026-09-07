@@ -90,21 +90,21 @@ todo = [
 ]
 skipped = len(assigned_files) - len(todo)
 if len(todo) == 0:
-    printt(i18n("[HuBERT特征] 无待处理音频，已全部跳过：%s") % skipped)
+    printt(i18n("[HuBERT features] No pending audio; skipped: %s") % skipped)
     raise SystemExit(0)
 
 
-printt(i18n("[HuBERT特征] 正在加载模型：%s") % model_path)
+printt(i18n("[HuBERT features] Loading model: %s") % model_path)
 if os.access(model_path, os.F_OK) == False:
     printt(
-        i18n("[HuBERT特征][失败] 模型不存在：%s")
+        i18n("[HuBERT features][Failed] Model not found: %s")
         % model_path
     )
     raise SystemExit(1)
 model = load_hubert_model(device, is_half and device != "cpu")
 normalize_audio = hubert_audio_requires_normalization()
 printt(
-    i18n("[HuBERT特征] 设备：%s | 待处理：%s | 已跳过：%s")
+    i18n("[HuBERT features] Device: %s | Pending: %s | Skipped: %s")
     % (device, len(todo), skipped)
 )
 
@@ -139,16 +139,16 @@ for idx, file in enumerate(todo):
             success += 1
             if should_report(idx, len(todo), max(1, (12 + n_part - 1) // n_part)):
                 printt(
-                    i18n("[HuBERT特征] 进度：%s/%s | 成功：%s | 失败：%s | %s | %s")
+                    i18n("[HuBERT features] Progress: %s/%s | Success: %s | Failed: %s | %s | %s")
                     % (idx + 1, len(todo), success, failed, file, feats.shape)
                 )
         else:
             failed += 1
-            printt(i18n("[HuBERT特征][失败] %s 包含NaN") % file)
+            printt(i18n("[HuBERT features][Failed] %s contains NaN values") % file)
     except Exception:
         failed += 1
         printt(i18n("[HuBERT特征][失败] %s\n%s") % (file, traceback.format_exc()))
 printt(
-    i18n("[HuBERT特征] 完成 | 成功：%s | 跳过：%s | 失败：%s")
+    i18n("[HuBERT features] Completed | Success: %s | Skipped: %s | Failed: %s")
     % (success, skipped, failed)
 )

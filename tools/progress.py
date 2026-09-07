@@ -17,30 +17,30 @@ def should_report(index, total, max_updates=12):
 
 def batch_status(title, current, total, success, failed, latest="", failures=None):
     if total <= 0:
-        state = i18n("等待输入")
+        state = i18n("Waiting for input")
     elif current >= total:
-        state = i18n("已完成")
+        state = i18n("Completed")
     else:
-        state = i18n("处理中")
+        state = i18n("Processing")
     lines = [
         "【%s】" % title,
-        "%s：%s" % (i18n("状态"), state),
+        "%s：%s" % (i18n("Status"), state),
         "%s：%s/%s | %s：%s | %s：%s"
         % (
-            i18n("进度"),
+            i18n("Progress"),
             current,
             total,
-            i18n("成功"),
+            i18n("Success"),
             success,
-            i18n("失败"),
+            i18n("Failed"),
             failed,
         ),
     ]
     if latest:
-        lines.append("%s：%s" % (i18n("当前"), latest))
+        lines.append("%s：%s" % (i18n("Current"), latest))
     if failures:
-        lines.append("%s：" % i18n("失败记录"))
+        lines.append("%s：" % i18n("Failure records"))
         lines.extend(failures[-10:])
         if len(failures) > 10:
-            lines.append(i18n("……仅显示最近10条失败记录"))
+            lines.append(i18n("…Showing only the 10 most recent failures"))
     return "\n".join(lines)

@@ -84,7 +84,7 @@ class RVC:
             if index_rate != 0:
                 self.index = faiss.read_index(index_path)
                 self.big_npy = self.index.reconstruct_n(0, self.index.ntotal)
-                printt(i18n("已启用索引检索"))
+                printt(i18n("Index search enabled"))
             self.pth_path = pth_path
             self.index_path = index_path
             self.index_rate = index_rate
@@ -142,7 +142,7 @@ class RVC:
         if new_index_rate != 0 and self.index_rate == 0:
             self.index = faiss.read_index(self.index_path)
             self.big_npy = self.index.reconstruct_n(0, self.index.ntotal)
-            printt(i18n("已启用索引检索"))
+            printt(i18n("Index search enabled"))
         self.index_rate = new_index_rate
 
     def get_f0_post(self, f0):
@@ -191,7 +191,7 @@ class RVC:
         if hasattr(self, "model_rmvpe") == False:
             from infer.rmvpe import RMVPE
 
-            printt(i18n("正在加载RMVPE模型"))
+            printt(i18n("Loading RMVPE model"))
             self.model_rmvpe = RMVPE(
                 "assets/rmvpe/rmvpe.pt",
                 is_half=self.is_half,
@@ -266,14 +266,14 @@ class RVC:
                     )
                 else:
                     printt(
-                        i18n("索引无效：必须使用added_xxxx.index，不能使用trained_xxxx.index")
+                        i18n("Invalid index: use added_xxxx.index, not trained_xxxx.index")
                     )
             else:
                 if report_status:
-                    printt(i18n("索引检索失败或未启用"))
+                    printt(i18n("Index search failed or is disabled"))
         except Exception:
             traceback.print_exc()
-            printt(i18n("索引检索失败"))
+            printt(i18n("Index search failed"))
         t3 = ttime()
         p_len = input_wav.shape[0] // 160
         factor = pow(2, self.formant_shift / 12)
@@ -356,7 +356,7 @@ class RVC:
         t5 = ttime()
         if report_status:
             printt(
-                i18n("耗时：特征=%.3f秒，索引=%.3f秒，音高=%.3f秒，模型=%.3f秒"),
+                i18n("Elapsed time: features=%.3fs, index=%.3fs, pitch=%.3fs, model=%.3fs"),
                 t2 - t1,
                 t3 - t2,
                 t4 - t3,

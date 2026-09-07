@@ -26,7 +26,7 @@ i18n = I18nAuto()
 
 
 def inference_status(title, state, detail=""):
-    lines = ["【%s】" % i18n(title), "%s：%s" % (i18n("状态"), i18n(state))]
+    lines = ["【%s】" % i18n(title), "%s：%s" % (i18n("Status"), i18n(state))]
     if detail:
         lines.extend(["", str(detail).strip()])
     return "\n".join(lines)
@@ -58,7 +58,7 @@ def speaker_selector_updates(checkpoint, n_spk):
     speaker_info = normalized_speaker_info(checkpoint, n_spk)
     if speaker_info:
         choices = [
-            i18n("说话人：%s（ID：%s）") % (item["name"], item["id"])
+            i18n("Speaker: %s (ID: %s)") % (item["name"], item["id"])
             for item in speaker_info
         ]
         return (
@@ -99,7 +99,7 @@ class VC:
         self.config = config
 
     def get_vc(self, sid, *to_return_protect):
-        logger.info("%s: %s", i18n("选择模型"), sid)
+        logger.info("%s: %s", i18n("Select model"), sid)
 
         to_return_protect0 = {
             "visible": self.if_f0 != 0,
@@ -120,7 +120,7 @@ class VC:
             if (
                 self.hubert_model is not None
             ):  # 考虑到轮询, 需要加个判断看是否 sid 是由有模型切换到无模型的
-                logger.info(i18n("清理模型缓存"))
+                logger.info(i18n("Clearing model cache"))
                 clear_cuda_graph_cache(self.net_g)
                 clear_cuda_graph_cache(self.hubert_model)
                 del (self.net_g, self.n_spk, self.hubert_model, self.tgt_sr)  # ,cpt
@@ -166,7 +166,7 @@ class VC:
                 "",
             )
         person = f'{os.getenv("weight_root")}/{sid}'
-        logger.info("%s: %s", i18n("正在加载模型"), person)
+        logger.info("%s: %s", i18n("Loading model"), person)
 
         if self.net_g is not None:
             clear_cuda_graph_cache(self.net_g)
@@ -208,7 +208,7 @@ class VC:
             "value": get_index_path_from_model(sid, default_speaker_id),
             "__type__": "update",
         }
-        logger.info("%s: %s", i18n("选择索引"), index["value"])
+        logger.info("%s: %s", i18n("Select index"), index["value"])
 
         return (
             (
@@ -236,7 +236,7 @@ class VC:
         protect,
     ):
         if input_audio_path is None:
-            return inference_status("单次推理", "等待输入", i18n("请上传音频文件")), None
+            return inference_status("Single Inference", "Waiting for input", i18n("Upload an audio file")), None
         f0_up_key = int(f0_up_key)
         try:
             audio = load_audio(input_audio_path, 16000)
@@ -282,22 +282,22 @@ class VC:
             else:
                 tgt_sr = self.tgt_sr
             index_info = (
-                "%s：%s" % (i18n("索引"), file_index)
+                "%s：%s" % (i18n("Index"), file_index)
                 if os.path.exists(file_index)
-                else "%s：%s" % (i18n("索引"), i18n("未使用"))
+                else "%s：%s" % (i18n("Index"), i18n("Not used"))
             )
             return (
                 inference_status(
-                    "单次推理",
-                    "成功",
+                    "Single Inference",
+                    "Success",
                     "%s\n%s：%s %.2fs | F0 %.2fs | %s %.2fs"
                     % (
                         index_info,
-                        i18n("耗时"),
-                        i18n("特征"),
+                        i18n("Elapsed time"),
+                        i18n("Features"),
                         times[0],
                         times[1],
-                        i18n("合成"),
+                        i18n("Synthesis"),
                         times[2],
                     ),
                 ),
@@ -306,7 +306,7 @@ class VC:
         except Exception:
             info = traceback.format_exc()
             logger.warning(info)
-            return inference_status("单次推理", "失败", info), (None, None)
+            return inference_status("Single Inference", "Failed", info), (None, None)
 
     def vc_multi(
         self,
@@ -342,7 +342,7 @@ class VC:
             )
             if not opt_root:
                 yield inference_status(
-                    "批量推理", "等待输入", i18n("请填写输出文件夹路径")
+                    "Batch Inference", "Waiting for input", i18n("Enter the output folder path")
                 )
                 return
             os.makedirs(opt_root, exist_ok=True)
@@ -360,7 +360,7 @@ class VC:
                 ]
             total = len(paths)
             if total == 0:
-                yield batch_status(i18n("批量推理"), 0, 0, 0, 0)
+                yield batch_status(i18n("Batch Inference"), 0, 0, 0, 0)
                 return
             success = 0
             failed = 0
@@ -415,7 +415,7 @@ class VC:
                     failures.append("%s：%s" % (os.path.basename(path), info))
                 if should_report(idx, total) or item_failed:
                     yield batch_status(
-                        i18n("批量推理"),
+                        i18n("Batch Inference"),
                         idx + 1,
                         total,
                         success,
@@ -424,4 +424,4 @@ class VC:
                         failures,
                     )
         except Exception:
-            yield inference_status("批量推理", "失败", traceback.format_exc())
+            yield inference_status("Batch Inference", "Failed", traceback.format_exc())
