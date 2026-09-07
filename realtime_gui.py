@@ -168,6 +168,10 @@ class GUI:
         src = self.last_values if values is None else values
         return (src.get("model_identity") or "") == NONE_MODEL
 
+    def is_none_passthrough(self, values=None):
+        src = self.last_values if values is None else values
+        return self.is_none_model(src) and abs(float(src.get("pitch") or 0)) < 1e-6 and abs(float(src.get("formant") or 0)) < 1e-6
+
     def output2_choices(self):
         return [NONE_MODEL] + list(self.output_devices or [])
 
@@ -571,10 +575,14 @@ class GUI:
             self.gui_config.pitch = values["pitch"]
             if self.rvc is not None and not self.reloading:
                 self.rvc.change_key(values["pitch"])
+            if values.get("run_audio") and values.get("change_voice") and self.low_latency_stream != self.is_none_passthrough(values):
+                self.request_audio_reload()
         elif event == "formant":
             self.gui_config.formant = values["formant"]
             if self.rvc is not None and not self.reloading:
                 self.rvc.change_formant(values["formant"])
+            if values.get("run_audio") and values.get("change_voice") and self.low_latency_stream != self.is_none_passthrough(values):
+                self.request_audio_reload()
         elif event == "index_rate":
             self.gui_config.index_rate = values["index_rate"]
             if self.rvc is not None and not self.reloading:
@@ -676,6 +684,8 @@ class GUI:
         if not run:
             self.stop_stream()
             return True
+        if convert and self.is_none_passthrough(values):
+            convert = False
         wanted_sr = "sr_model" if values["sr_model"] else "sr_device"
         out2 = values.get("sg_output_device_2") or NONE_MODEL
         out2_dirty = flag_vc and out2 != (self.gui_config.sg_output_device_2 or NONE_MODEL)
