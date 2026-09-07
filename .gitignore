@@ -1,0 +1,6 @@
+.venv/
+.model-downloads/
+__pycache__/
+assets/
+!assets/pymss_weights/
+logs/
