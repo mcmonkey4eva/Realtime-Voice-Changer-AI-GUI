@@ -189,8 +189,34 @@ if __name__ == "__main__":
                     data["fcpe"] = data["f0method"] == "fcpe"
             return data
 
+        def scan_model_root(self, root):
+            models = {}
+            try:
+                names = sorted(os.listdir(root))
+            except:
+                return models
+            for name in names:
+                folder = os.path.join(root, name)
+                if not os.path.isdir(folder):
+                    continue
+                try:
+                    files = sorted(os.listdir(folder))
+                except:
+                    continue
+                pths = [os.path.join(folder, f) for f in files if f.lower().endswith(".pth")]
+                idxs = [os.path.join(folder, f) for f in files if f.lower().endswith(".index")]
+                if pths and idxs:
+                    models[name] = (pths[0], idxs[0])
+            return models
+
         def launcher(self):
             data = self.load()
+            model_root = data.get("model_root", "")
+            model_files = self.scan_model_root(model_root)
+            identities = list(model_files.keys())
+            model_identity = data.get("model_identity", "")
+            if model_identity not in model_files:
+                model_identity = identities[0] if identities else ""
             sg.theme("LightBlue3")
             layout = [
                 [
@@ -497,8 +523,10 @@ if __name__ == "__main__":
                         printt(i18n("CUDA available: %s"), torch.cuda.is_available())
                         self.start_vc()
                         settings = {
-                            "pth_path": values["pth_path"],
-                            "index_path": values["index_path"],
+                            "pth_path": self.gui_config.pth_path,
+                            "index_path": self.gui_config.index_path,
+                            "model_root": values["model_root"],
+                            "model_identity": values["model_identity"],
                             "sg_hostapi": values["sg_hostapi"],
                             "sg_wasapi_exclusive": values["sg_wasapi_exclusive"],
                             "sg_input_device": values["sg_input_device"],
@@ -568,22 +596,34 @@ if __name__ == "__main__":
                     self.gui_config.O_noise_reduce = values["O_noise_reduce"]
                 elif event in ["vc", "im"]:
                     self.function = event
+                elif event == "model_root" or event == "select_model_root":
+                    model_files = self.scan_model_root(values["model_root"])
+                    identities = list(model_files.keys())
+                    selected = values.get("model_identity", "")
+                    if selected not in model_files:
+                        selected = identities[0] if identities else ""
+                    self.window["model_identity"].Update(values=identities)
+                    self.window["model_identity"].Update(value=selected)
+                elif event == "model_identity":
+                    pass
                 elif event == "stop_vc" or event != "start_vc":
                     # Other parameters do not support hot update
                     self.stop_stream()
 
         def set_values(self, values):
-            if len(values["pth_path"].strip()) == 0:
+            model_files = self.scan_model_root(values["model_root"])
+            pth_path, index_path = model_files.get(values.get("model_identity", ""), ("", ""))
+            if len(pth_path.strip()) == 0:
                 sg.popup(i18n("Please choose the .pth file"))
                 return False
-            if len(values["index_path"].strip()) == 0:
+            if len(index_path.strip()) == 0:
                 sg.popup(i18n("Please choose the .index file"))
                 return False
             pattern = re.compile("[^\x00-\x7F]+")
-            if pattern.findall(values["pth_path"]):
+            if pattern.findall(pth_path):
                 sg.popup(i18n("The .pth file path cannot contain Chinese characters"))
                 return False
-            if pattern.findall(values["index_path"]):
+            if pattern.findall(index_path):
                 sg.popup(i18n("The index file path cannot contain Chinese characters"))
                 return False
             self.set_devices(values["sg_input_device"], values["sg_output_device"])
@@ -592,8 +632,8 @@ if __name__ == "__main__":
             self.gui_config.sg_wasapi_exclusive = values["sg_wasapi_exclusive"]
             self.gui_config.sg_input_device = values["sg_input_device"]
             self.gui_config.sg_output_device = values["sg_output_device"]
-            self.gui_config.pth_path = values["pth_path"]
-            self.gui_config.index_path = values["index_path"]
+            self.gui_config.pth_path = pth_path
+            self.gui_config.index_path = index_path
             self.gui_config.sr_type = ["sr_model", "sr_device"][
                 [
                     values["sr_model"],
