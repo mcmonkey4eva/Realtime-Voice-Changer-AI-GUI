@@ -4,3 +4,4 @@ __pycache__/
 assets/
 !assets/pymss_weights/
 logs/
+config.json
