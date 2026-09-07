@@ -11,6 +11,7 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 flag_vc = False
+NONE_MODEL = "None"
 
 _boot_t0 = time.perf_counter()
 _step = {"t": _boot_t0, "label": None}
@@ -36,6 +37,7 @@ if __name__ == "__main__":
         import torch
         import torch.nn.functional as F
         import torchaudio.transforms as tat
+        import torchaudio.functional as AF
         pbar.update(1)
 
         _boot_step(pbar, "Loading audio / GUI libs")
@@ -154,6 +156,13 @@ class GUI:
                 models[name] = (pths[0], idxs[0])
         return models
 
+    def model_identity_list(self, root):
+        return [NONE_MODEL] + [name for name in self.scan_model_root(root) if name != NONE_MODEL]
+
+    def is_none_model(self, values=None):
+        src = self.last_values if values is None else values
+        return (src.get("model_identity") or "") == NONE_MODEL
+
     def persist_model_root(self, root, identity=None):
         if not root:
             try:
@@ -173,11 +182,10 @@ class GUI:
     def launcher(self):
         data = self.load()
         model_root = data.get("model_root", "")
-        model_files = self.scan_model_root(model_root)
-        identities = list(model_files.keys())
+        identities = self.model_identity_list(model_root)
         model_identity = data.get("model_identity", "")
-        if model_identity not in model_files:
-            model_identity = identities[0] if identities else ""
+        if model_identity not in identities:
+            model_identity = NONE_MODEL
         self.gui_config.debug = data.get("debug", False)
         sg.theme("LightBlue3")
         layout = [
@@ -190,8 +198,8 @@ class GUI:
                             sg.FolderBrowse(i18n("Select root folder"), key="select_model_root", target="model_root", enable_events=True, initial_folder=model_root if os.path.isdir(model_root) else os.path.join(os.getcwd(), "assets/weights"), tooltip=i18n("Folder whose direct subfolders each contain a .pth and a .index. Those subfolder names become the Model list.")),
                         ],
                         [
-                            sg.Text(i18n("Model"), tooltip=i18n("Voice identity to load. Uses the .pth and .index inside the selected subfolder.")),
-                            sg.Combo(identities, key="model_identity", default_value=model_identity, enable_events=True, size=(45, 1), tooltip=i18n("Voice identity to load. Uses the .pth and .index inside the selected subfolder.")),
+                            sg.Text(i18n("Model"), tooltip=i18n("Voice identity to load. None keeps your own voice and still applies Pitch and Gender factor. Other names use the .pth and .index inside that subfolder.")),
+                            sg.Combo(identities, key="model_identity", default_value=model_identity, enable_events=True, size=(45, 1), tooltip=i18n("Voice identity to load. None keeps your own voice and still applies Pitch and Gender factor. Other names use the .pth and .index inside that subfolder.")),
                         ],
                     ],
                 )
@@ -236,7 +244,7 @@ class GUI:
                         ],
                         [
                             sg.Text(i18n("Gender factor / voice thickness"), tooltip=i18n("Formant shift in semitones. Changes apparent vocal-tract size / brightness separately from pitch. Positive often sounds thinner or higher; negative thicker or lower.")),
-                            sg.Slider(range=(-2, 2), key="formant", resolution=0.05, orientation="h", default_value=data.get("formant", 0.0), enable_events=True, tooltip=i18n("Formant shift in semitones. Changes apparent vocal-tract size / brightness separately from pitch. Positive often sounds thinner or higher; negative thicker or lower.")),
+                            sg.Slider(range=(-5, 5), key="formant", resolution=0.05, orientation="h", default_value=data.get("formant", 0.0), enable_events=True, tooltip=i18n("Formant shift in semitones. Changes apparent vocal-tract size / brightness separately from pitch. Positive often sounds thinner or higher; negative thicker or lower.")),
                         ],
                         [
                             sg.Text(i18n("Index Rate"), tooltip=i18n("How strongly retrieval replaces live features with the closest features from this model's .index. 0 is off. Higher values lock timbre closer to the training voice and can reduce leakage.")),
@@ -283,7 +291,7 @@ class GUI:
             ],
             [
                 sg.Checkbox(i18n("Run Audio"), key="run_audio", default=False, enable_events=True, tooltip=i18n("When checked, audio from the input device is sent to the output. Uncheck to stop all audio.")),
-                sg.Checkbox(i18n("Change Voice"), key="change_voice", default=True, enable_events=True, tooltip=i18n("When checked with Run Audio, convert with the selected model. When unchecked, the input is forwarded to the output with low latency.")),
+                sg.Checkbox(i18n("Change Voice"), key="change_voice", default=True, enable_events=True, tooltip=i18n("When checked with Run Audio, convert with the selected model, or apply pitch/formant only if Model is None. When unchecked, the input is forwarded to the output with low latency.")),
                 sg.Checkbox(i18n("Debug"), key="debug", default=data.get("debug", False), enable_events=True, tooltip=i18n("When checked, print SOLA offset and per-chunk inference time to the console.")),
                 sg.Text(i18n("Algorithmic delays(ms):"), tooltip=i18n("Estimated extra delay from the audio device, chunk size, fade, and input noise reduction. Not the same as inference time.")),
                 sg.Text("0", key="delay_time"),
@@ -336,6 +344,8 @@ class GUI:
         exit()
 
     def model_paths_error(self, values):
+        if self.is_none_model(values):
+            return None
         model_files = self.scan_model_root(values.get("model_root") or "")
         pth_path, index_path = model_files.get(values.get("model_identity", ""), ("", ""))
         if len(pth_path.strip()) == 0:
@@ -483,11 +493,10 @@ class GUI:
                 root = next((c for c in candidates if c), "") or ""
             if root:
                 self.window["model_root"].update(root)
-            model_files = self.scan_model_root(root)
-            identities = list(model_files.keys())
+            identities = self.model_identity_list(root)
             selected = values.get("model_identity", "")
-            if selected not in model_files:
-                selected = identities[0] if identities else ""
+            if selected not in identities:
+                selected = NONE_MODEL
             self.window["model_identity"].Update(values=identities)
             self.window["model_identity"].Update(value=selected)
             self.persist_model_root(root, selected)
@@ -509,11 +518,13 @@ class GUI:
         wanted_sr = "sr_model" if values["sr_model"] else "sr_device"
         stream_dirty = flag_vc and (self.low_latency_stream == convert or self.gui_config.block_time != values["block_time"] or self.gui_config.sr_type != wanted_sr or self.gui_config.sg_input_device != values["sg_input_device"] or self.gui_config.sg_output_device != values["sg_output_device"] or self.gui_config.sg_wasapi_exclusive != values["sg_wasapi_exclusive"] or self.gui_config.sg_hostapi != values["sg_hostapi"])
         if convert:
+            none = self.is_none_model(values)
             model_files = self.scan_model_root(values["model_root"])
             pth_path, index_path = model_files.get(values.get("model_identity", ""), ("", ""))
-            ready = self.rvc is not None and hasattr(self, "input_wav") and self.input_wav.shape[0] == self.extra_frame + self.crossfade_frame + self.sola_search_frame + self.block_frame and self.rvc.pth_path == pth_path and self.rvc.index_path == index_path and self.gui_config.block_time == values["block_time"] and self.gui_config.crossfade_time == values["crossfade_length"] and self.gui_config.extra_time == values["extra_time"] and self.gui_config.sr_type == wanted_sr
+            buf_ok = hasattr(self, "input_wav") and self.input_wav.shape[0] == self.extra_frame + self.crossfade_frame + self.sola_search_frame + self.block_frame and self.gui_config.block_time == values["block_time"] and self.gui_config.crossfade_time == values["crossfade_length"] and self.gui_config.sr_type == wanted_sr
+            ready = (buf_ok and self.rvc is None) if none else (buf_ok and self.rvc is not None and self.rvc.pth_path == pth_path and self.rvc.index_path == index_path and self.gui_config.extra_time == values["extra_time"])
             if not ready:
-                if not self.set_values(values, require_model=True):
+                if not self.set_values(values, require_model=not none):
                     return False
                 if flag_vc:
                     self.stop_stream()
@@ -594,12 +605,16 @@ class GUI:
         return True
 
     def start_vc(self, reuse_stream=False):
-        print("Starting voice conversion (loading model)...")
+        none = self.is_none_model()
+        print("Starting pitch/formant (no voice model)..." if none else "Starting voice conversion (loading model)...")
         _start_t0 = time.perf_counter()
+        if none:
+            self.rvc = None
         torch.cuda.empty_cache()
-        self.rvc = rvc_for_realtime.RVC(self.gui_config.pitch, self.gui_config.formant, self.gui_config.pth_path, self.gui_config.index_path, self.gui_config.index_rate, self.config, self.rvc)
+        if not none:
+            self.rvc = rvc_for_realtime.RVC(self.gui_config.pitch, self.gui_config.formant, self.gui_config.pth_path, self.gui_config.index_path, self.gui_config.index_rate, self.config, self.rvc)
         if not reuse_stream:
-            self.gui_config.samplerate = self.rvc.tgt_sr if self.gui_config.sr_type == "sr_model" else self.get_device_samplerate()
+            self.gui_config.samplerate = self.get_device_samplerate() if none or self.gui_config.sr_type != "sr_model" else self.rvc.tgt_sr
             self.gui_config.channels = self.get_device_channels()
             self.zc = self.gui_config.samplerate // 100
             self.block_frame = int(np.round(self.gui_config.block_time * self.gui_config.samplerate / self.zc)) * self.zc
@@ -609,7 +624,7 @@ class GUI:
         self.crossfade_frame = int(np.round(self.gui_config.crossfade_time * self.gui_config.samplerate / self.zc)) * self.zc
         self.sola_buffer_frame = min(self.crossfade_frame, 4 * self.zc)
         self.sola_search_frame = self.zc
-        self.extra_frame = int(np.round(self.gui_config.extra_time * self.gui_config.samplerate / self.zc)) * self.zc
+        self.extra_frame = 0 if none else int(np.round(self.gui_config.extra_time * self.gui_config.samplerate / self.zc)) * self.zc
         self.input_wav = torch.zeros(self.extra_frame + self.crossfade_frame + self.sola_search_frame + self.block_frame, device=self.config.device, dtype=torch.float32)
         self.input_wav_denoise = self.input_wav.clone()
         self.input_wav_res = torch.zeros(160 * self.input_wav.shape[0] // self.zc, device=self.config.device, dtype=torch.float32)
@@ -622,16 +637,21 @@ class GUI:
         self.return_length = (self.block_frame + self.sola_buffer_frame + self.sola_search_frame) // self.zc
         self.fade_in_window = torch.sin(0.5 * np.pi * torch.linspace(0.0, 1.0, steps=self.sola_buffer_frame, device=self.config.device, dtype=torch.float32)) ** 2
         self.fade_out_window = 1 - self.fade_in_window
-        self.resampler = tat.Resample(orig_freq=self.gui_config.samplerate, new_freq=16000, dtype=torch.float32).to(self.config.device)
-        if self.rvc.tgt_sr != self.gui_config.samplerate:
-            self.resampler2 = tat.Resample(orig_freq=self.rvc.tgt_sr, new_freq=self.gui_config.samplerate, dtype=torch.float32).to(self.config.device)
-        else:
+        if none:
+            self.resampler = None
             self.resampler2 = None
+        else:
+            self.resampler = tat.Resample(orig_freq=self.gui_config.samplerate, new_freq=16000, dtype=torch.float32).to(self.config.device)
+            if self.rvc.tgt_sr != self.gui_config.samplerate:
+                self.resampler2 = tat.Resample(orig_freq=self.rvc.tgt_sr, new_freq=self.gui_config.samplerate, dtype=torch.float32).to(self.config.device)
+            else:
+                self.resampler2 = None
         # Bundled torch.istft is not CUDA Graph-capturable, so TorchGate
         # stays eager while resampling and RVC inference still use graphs.
         self.tg = TorchGate(sr=self.gui_config.samplerate, n_fft=4 * self.zc, prop_decrease=0.9).to(self.config.device)
-        self.prewarm_cuda_graph()
-        print(f"Voice conversion started in {time.perf_counter() - _start_t0:.1f}s")
+        if not none:
+            self.prewarm_cuda_graph()
+        print(f"{'Pitch/formant' if none else 'Voice conversion'} started in {time.perf_counter() - _start_t0:.1f}s")
 
     def prewarm_cuda_graph(self):
         if not cuda_graph_enabled(self.config.device):
@@ -695,6 +715,49 @@ class GUI:
                 self.stream = None
             self.change_voice = False
 
+    def shift_pitch_formant(self, wav):
+        wav = wav.clone()
+        pitch = float(self.gui_config.pitch)
+        formant = float(self.gui_config.formant)
+        if abs(pitch) < 1e-6 and abs(formant) < 1e-6:
+            return wav
+        n_fft = int(4 * self.zc)
+        hop = int(self.zc)
+        key = (n_fft, hop, wav.device)
+        if getattr(self, "_pf_key", None) != key:
+            self._pf_key = key
+            self._pf_window = torch.hann_window(n_fft, device=wav.device)
+            self._pf_phase_advance = torch.linspace(0, np.pi * hop, n_fft // 2 + 1, device=wav.device).unsqueeze(-1)
+        window = self._pf_window
+        n = wav.shape[0]
+        y = wav
+        if abs(pitch) > 1e-4:
+            stretch = 1.0 / (2.0 ** (pitch / 12.0))
+            spec = torch.stft(y, n_fft, hop, window=window, return_complex=True)
+            stretched = AF.phase_vocoder(spec.unsqueeze(0), stretch, self._pf_phase_advance)
+            new_len = max(n_fft, int(round(n / stretch)))
+            y = torch.istft(stretched.squeeze(0), n_fft, hop, window=window, length=new_len)
+            y = F.interpolate(y.view(1, 1, -1), size=n, mode="linear", align_corners=False).view(-1)
+        env_shift = formant - pitch
+        if abs(env_shift) > 1e-4:
+            ratio = 2.0 ** (env_shift / 12.0)
+            spec = torch.stft(y, n_fft, hop, window=window, return_complex=True)
+            mag = spec.abs().clamp_min(1e-8)
+            n_freq = mag.shape[0]
+            log_mag = torch.log(mag)
+            smooth_n = max(5, int(round(250.0 * n_fft / float(self.gui_config.samplerate))) | 1)
+            kernel = torch.hann_window(smooth_n, device=y.device)
+            kernel = (kernel / kernel.sum()).view(1, 1, -1)
+            log_env = F.conv1d(log_mag.transpose(0, 1).unsqueeze(1), kernel, padding=smooth_n // 2).squeeze(1).transpose(0, 1)
+            idx = (torch.arange(n_freq, device=y.device, dtype=torch.float32) / ratio).clamp(0, n_freq - 1)
+            i0 = idx.long()
+            i1 = torch.clamp(i0 + 1, max=n_freq - 1)
+            frac = (idx - i0.float()).unsqueeze(1)
+            log_env_w = log_env[i0] * (1 - frac) + log_env[i1] * frac
+            mag_w = torch.exp(log_env_w + (log_mag - log_env))
+            y = torch.istft(torch.polar(mag_w, spec.angle()), n_fft, hop, window=window, length=n)
+        return y
+
     def audio_callback(self, indata, outdata, frames, times, status):
         """
         Audio callback
@@ -724,8 +787,6 @@ class GUI:
             indata = indata[self.zc // 2 :]
         self.input_wav[: -self.block_frame] = self.input_wav[self.block_frame :].clone()
         self.input_wav[-indata.shape[0] :] = torch.from_numpy(indata).to(self.config.device)
-        self.input_wav_res[: -self.block_frame_16k] = self.input_wav_res[self.block_frame_16k :].clone()
-        # input noise reduction and resampling
         if self.gui_config.I_noise_reduce:
             self.input_wav_denoise[: -self.block_frame] = self.input_wav_denoise[self.block_frame :].clone()
             input_wav = self.input_wav[-self.sola_buffer_frame - self.block_frame :]
@@ -734,15 +795,20 @@ class GUI:
             input_wav[: self.sola_buffer_frame] += self.nr_buffer * self.fade_out_window
             self.input_wav_denoise[-self.block_frame :] = input_wav[: self.block_frame]
             self.nr_buffer[:] = input_wav[self.block_frame :]
-            resample_input = self.input_wav_denoise[-self.block_frame - 2 * self.zc :]
-            self.input_wav_res[-self.block_frame_16k - 160 :] = run_cuda_graph(self.resampler, "realtime-input-resample", lambda audio: self.resampler(audio), resample_input)[160:]
+        if self.rvc is None:
+            src = self.input_wav_denoise if self.gui_config.I_noise_reduce else self.input_wav
+            infer_wav = self.shift_pitch_formant(src[self.extra_frame :])
         else:
-            resample_input = self.input_wav[-indata.shape[0] - 2 * self.zc :]
-            self.input_wav_res[-160 * (indata.shape[0] // self.zc + 1) :] = run_cuda_graph(self.resampler, "realtime-input-resample", lambda audio: self.resampler(audio), resample_input)[160:]
-        # infer
-        infer_wav = self.rvc.infer(self.input_wav_res, self.block_frame_16k, self.skip_head, self.return_length, self.gui_config.f0method)
-        if self.resampler2 is not None:
-            infer_wav = run_cuda_graph(self.resampler2, "realtime-output-resample", lambda audio: self.resampler2(audio), infer_wav)
+            self.input_wav_res[: -self.block_frame_16k] = self.input_wav_res[self.block_frame_16k :].clone()
+            if self.gui_config.I_noise_reduce:
+                resample_input = self.input_wav_denoise[-self.block_frame - 2 * self.zc :]
+                self.input_wav_res[-self.block_frame_16k - 160 :] = run_cuda_graph(self.resampler, "realtime-input-resample", lambda audio: self.resampler(audio), resample_input)[160:]
+            else:
+                resample_input = self.input_wav[-indata.shape[0] - 2 * self.zc :]
+                self.input_wav_res[-160 * (indata.shape[0] // self.zc + 1) :] = run_cuda_graph(self.resampler, "realtime-input-resample", lambda audio: self.resampler(audio), resample_input)[160:]
+            infer_wav = self.rvc.infer(self.input_wav_res, self.block_frame_16k, self.skip_head, self.return_length, self.gui_config.f0method)
+            if self.resampler2 is not None:
+                infer_wav = run_cuda_graph(self.resampler2, "realtime-output-resample", lambda audio: self.resampler2(audio), infer_wav)
         # output noise reduction
         if self.gui_config.O_noise_reduce:
             self.output_buffer[: -self.block_frame] = self.output_buffer[self.block_frame :].clone()
