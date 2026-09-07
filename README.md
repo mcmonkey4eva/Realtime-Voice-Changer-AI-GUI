@@ -8,7 +8,7 @@ I also changed the text to English, because, well, I don't speak Chinese.
 
 This remains under the original MIT License.  The authors of the original library are free to steal and upstream my changes if they wish.
 
-Large amounts of this were made with AI coding agents and not overly reviewed under than my practical-usage testing.
+Large amounts of this were made with AI coding agents and not overly reviewed other than my practical-usage testing.
 
 I have not currently spent any time towards making this easier for anyone that's not me other than wherever your needs happen to overlap my own.
 
