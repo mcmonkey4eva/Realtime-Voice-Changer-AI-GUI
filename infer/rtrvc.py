@@ -53,8 +53,8 @@ def get_synthesizer(pth_path, device=torch.device("cpu")):
     return net_g, cpt
 
 
-# config.device=torch.device("cpu")########强制cpu测试
-# config.is_half=False########强制cpu测试
+# config.device=torch.device("cpu")######## force CPU test
+# config.is_half=False######## force CPU test
 class RVC:
     def __init__(
         self,
@@ -67,12 +67,12 @@ class RVC:
         last_rvc=None,
     ) :
         """
-        初始化
+        Initialize
         """
         try:
             # global config
             self.config = config
-            # device="cpu"########强制cpu测试
+            # device="cpu"######## force CPU test
             self.device = config.device
             self.f0_up_key = key
             self.formant_shift = formant

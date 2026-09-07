@@ -115,7 +115,7 @@ class PreProcess:
             return True
         except Exception:
             println(
-                i18n("[数据切分][失败] %s\n%s")
+                i18n("[Data slicing][Failed] %s\n%s")
                 % (path, traceback.format_exc())
             )
             return False

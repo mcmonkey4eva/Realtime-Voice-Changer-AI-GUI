@@ -243,10 +243,10 @@ def run(rank, n_gpus, hps, logger, use_ddp):
             net_g = DDP(net_g)
             net_d = DDP(net_d)
 
-    try:  # 如果能加载自动resume
+    try:  # resume automatically if a checkpoint loads
         _, _, _, epoch_str = utils.load_checkpoint(
             utils.latest_checkpoint_path(hps.model_dir, "D_*.pth"), net_d, optim_d
-        )  # D多半加载没事
+        )  # discriminator usually loads fine
         if rank == 0:
             logger.info(i18n("Restored discriminator checkpoint"))
         # _, _, _, epoch_str = utils.load_checkpoint(utils.latest_checkpoint_path(hps.model_dir, "G_*.pth"), net_g, optim_g,load_opt=0)
@@ -256,7 +256,7 @@ def run(rank, n_gpus, hps, logger, use_ddp):
         global_step = (epoch_str - 1) * len(train_loader)
         # epoch_str = 1
         # global_step = 0
-    except Exception:  # 如果首次不能加载，加载pretrain
+    except Exception:  # if resume fails, load pretrained weights
         # traceback.print_exc()
         epoch_str = 1
         global_step = 0

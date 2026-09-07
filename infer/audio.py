@@ -309,7 +309,7 @@ def load_audio_tensor(file, sr, force_mono=True):
 
 def load_audio(file, sr, force_mono=True):
     """Load float32 audio; mono is [T], preserved channels are [C, T]."""
-    file = clean_path(file)  # 防止小白拷路径头尾带了空格和"和回车
+    file = clean_path(file)  # strip copied spaces, quotes, and newlines from the path
     if _USE_TORCHAUDIO_GPU:
         try:
             return _load_audio_torchaudio_gpu(file, sr, force_mono=force_mono)

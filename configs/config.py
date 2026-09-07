@@ -251,13 +251,13 @@ class Config:
             self.n_cpu = cpu_count()
 
         if self.is_half:
-            # 6G显存配置
+            # 6 GB VRAM config
             x_pad = 3
             x_query = 10
             x_center = 60
             x_max = 65
         else:
-            # 5G显存配置
+            # 5 GB VRAM config
             x_pad = 1
             x_query = 6
             x_center = 38

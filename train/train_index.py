@@ -46,7 +46,7 @@ def newest_index(pattern):
 def speaker_scope(message, speaker_id):
     if speaker_id is None:
         return message
-    return "%s：%s | %s" % (i18n("Speaker ID (0-109)"), speaker_id, message)
+    return "%s: %s | %s" % (i18n("Speaker ID (0-109)"), speaker_id, message)
 
 
 def link_added_index(added_path, speaker_id=None):
@@ -77,7 +77,7 @@ def link_added_index(added_path, speaker_id=None):
     except Exception:
         log(
             speaker_scope(
-                i18n("[索引训练][失败] 无法链接索引到外部目录：%s\n%s")
+                i18n("[Index training][Failed] Could not link index to external directory: %s\n%s")
                 % (outside_index_root, traceback.format_exc()),
                 speaker_id,
             )
@@ -187,7 +187,7 @@ def train_one_speaker(speaker_id, paths):
         except Exception:
             log(
                 scope(
-                    i18n("[索引训练][失败] 聚类失败，将使用原始特征继续\n%s")
+                    i18n("[Index training][Failed] Clustering failed; continuing with the original features\n%s")
                     % traceback.format_exc()
                 )
             )

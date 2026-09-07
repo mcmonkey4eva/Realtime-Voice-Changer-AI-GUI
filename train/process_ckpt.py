@@ -72,7 +72,7 @@ def savee(ckpt, sr, if_f0, name, epoch, version, hps):
 def show_info(path):
     try:
         a = torch.load(path, map_location="cpu")
-        return i18n("模型信息：%s\n采样率：%s\n是否使用音高引导：%s\n版本：%s") % (
+        return i18n("Model information: %s\nSample rate: %s\nPitch guidance: %s\nVersion: %s") % (
             a.get("info", "None"),
             a.get("sr", "None"),
             a.get("f0", "None"),

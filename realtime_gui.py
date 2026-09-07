@@ -383,7 +383,7 @@ if __name__ == "__main__":
                                 ),
                             ],
                             # [
-                            #     sg.Text("设备延迟"),
+                            #     sg.Text("Device latency"),
                             #     sg.Slider(
                             #         range=(0, 1),
                             #         key="device_latency",
@@ -822,7 +822,7 @@ if __name__ == "__main__":
             self, indata, outdata, frames, times, status
         ):
             """
-            音频处理
+            Audio callback
             """
             global flag_vc
             start_time = time.perf_counter()
@@ -986,7 +986,7 @@ if __name__ == "__main__":
             printt(i18n("Inference time: %.2f seconds"), total_time)
 
         def update_devices(self, hostapi_name=None):
-            """获取设备列表"""
+            """List audio devices"""
             global flag_vc
             printt("Enumerating audio devices...")
             flag_vc = False
@@ -1028,7 +1028,7 @@ if __name__ == "__main__":
             )
 
         def set_devices(self, input_device, output_device):
-            """设置输出设备"""
+            """Set input and output devices"""
             sd.default.device[0] = self.input_devices_indices[
                 self.input_devices.index(input_device)
             ]

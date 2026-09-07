@@ -26,7 +26,7 @@ i18n = I18nAuto()
 
 
 def inference_status(title, state, detail=""):
-    lines = ["【%s】" % i18n(title), "%s：%s" % (i18n("Status"), i18n(state))]
+    lines = ["[%s]" % i18n(title), "%s: %s" % (i18n("Status"), i18n(state))]
     if detail:
         lines.extend(["", str(detail).strip()])
     return "\n".join(lines)
@@ -119,7 +119,7 @@ class VC:
         if sid == "" or sid == []:
             if (
                 self.hubert_model is not None
-            ):  # 考虑到轮询, 需要加个判断看是否 sid 是由有模型切换到无模型的
+            ):  # Gradio may poll; detect switching from a loaded sid to none
                 logger.info(i18n("Clearing model cache"))
                 clear_cuda_graph_cache(self.net_g)
                 clear_cuda_graph_cache(self.hubert_model)
@@ -129,7 +129,7 @@ class VC:
                 ) = None
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                ###楼下不这么折腾清理不干净
+                ### without this extra cleanup, GPU memory is not fully released
                 self.if_f0 = self.cpt.get("f0", 1)
                 self.version = self.cpt.get("version", "v1")
                 if self.version == "v1":
@@ -258,7 +258,7 @@ class VC:
                     .replace("trained", "added")
                 )
             else:
-                file_index = ""  # 防止小白写错，自动帮他替换掉
+                file_index = ""  # fix common user mistakes in the index path
 
             audio_opt = self.pipeline.pipeline(
                 self.hubert_model,
@@ -282,15 +282,15 @@ class VC:
             else:
                 tgt_sr = self.tgt_sr
             index_info = (
-                "%s：%s" % (i18n("Index"), file_index)
+                "%s: %s" % (i18n("Index"), file_index)
                 if os.path.exists(file_index)
-                else "%s：%s" % (i18n("Index"), i18n("Not used"))
+                else "%s: %s" % (i18n("Index"), i18n("Not used"))
             )
             return (
                 inference_status(
                     "Single Inference",
                     "Success",
-                    "%s\n%s：%s %.2fs | F0 %.2fs | %s %.2fs"
+                    "%s\n%s: %s %.2fs | F0 %.2fs | %s %.2fs"
                     % (
                         index_info,
                         i18n("Elapsed time"),
@@ -331,7 +331,7 @@ class VC:
                 .strip("\n")
                 .strip('"')
                 .strip(" ")
-            )  # 防止小白拷路径头尾带了空格和"和回车
+            )  # strip copied spaces, quotes, and newlines from the path
             opt_root = (
                 (opt_root or "")
                 .strip(" ")
@@ -408,11 +408,11 @@ class VC:
                         info = "%s\n%s" % (info, traceback.format_exc())
                         failed += 1
                         item_failed = True
-                        failures.append("%s：%s" % (os.path.basename(path), info))
+                        failures.append("%s: %s" % (os.path.basename(path), info))
                 else:
                     failed += 1
                     item_failed = True
-                    failures.append("%s：%s" % (os.path.basename(path), info))
+                    failures.append("%s: %s" % (os.path.basename(path), info))
                 if should_report(idx, total) or item_failed:
                     yield batch_status(
                         i18n("Batch Inference"),

@@ -163,7 +163,7 @@ class FeatureInput(object):
                 except Exception:
                     failed += 1
                     printt(
-                        i18n("[F0提取][失败] %s\n%s")
+                        i18n("[F0 extraction][Failed] %s\n%s")
                         % (inp_path, traceback.format_exc())
                     )
             printt(

@@ -62,7 +62,7 @@ class ModelSpec:
 
 MODEL_SPECS = (
     ModelSpec(
-        label="去混响",
+        label="Dereverb",
         model_id="dereverb-less-aggressive-18.8050",
         model_type="mel_band_roformer",
         model_file="dereverb_mel_band_roformer_less_aggressive_anvuew_sdr_18.8050.ckpt",
@@ -75,7 +75,7 @@ MODEL_SPECS = (
         overlap_size=176400,
     ),
     ModelSpec(
-        label="去混响（激进）",
+        label="Dereverb (aggressive)",
         model_id="dereverb-anvuew-19.1729",
         model_type="mel_band_roformer",
         model_file="dereverb_mel_band_roformer_anvuew_sdr_19.1729.ckpt",
@@ -88,7 +88,7 @@ MODEL_SPECS = (
         overlap_size=176400,
     ),
     ModelSpec(
-        label="去伴奏",
+        label="Remove accompaniment",
         model_id="vocals-bs-roformer-368",
         model_type="bs_roformer",
         model_file="model_bs_roformer_ep_368_sdr_12.9628.ckpt",
@@ -101,7 +101,7 @@ MODEL_SPECS = (
         overlap_size=264600,
     ),
     ModelSpec(
-        label="去伴奏（激进）",
+        label="Remove accompaniment (aggressive)",
         model_id="vocals-bs-roformer-317",
         model_type="bs_roformer",
         model_file="model_bs_roformer_ep_317_sdr_12.9755.ckpt",
@@ -114,7 +114,7 @@ MODEL_SPECS = (
         overlap_size=176400,
     ),
     ModelSpec(
-        label="提主旋律",
+        label="Extract lead vocal",
         model_id="karaoke-mel-roformer-10.1956",
         model_type="mel_band_roformer",
         model_file="model_mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt",
@@ -290,7 +290,7 @@ class MSSTBatchSeparator:
             from pymss import MSSeparator, load_audio
         except ImportError as error:
             raise RuntimeError(
-                "项目内置的 pymss 运行库加载失败"
+                "Failed to load the bundled pymss runtime"
             ) from error
 
         self.spec = spec
@@ -300,7 +300,7 @@ class MSSTBatchSeparator:
         desired_root = clean_path(desired_root)
         secondary_root = clean_path(secondary_root)
         if not desired_root or not secondary_root:
-            raise ValueError("输出文件夹不能为空")
+            raise ValueError("Output folder cannot be empty")
         self.desired_root = os.path.abspath(desired_root)
         self.secondary_root = os.path.abspath(secondary_root)
         os.makedirs(self.desired_root, exist_ok=True)
@@ -401,7 +401,7 @@ class MSSTBatchSeparator:
         try:
             _write_audio(temp_path, audio, sample_rate, self.output_format)
             if not os.path.isfile(temp_path) or os.path.getsize(temp_path) == 0:
-                raise RuntimeError("音频编码没有生成有效文件: %s" % output_path)
+                raise RuntimeError("Audio encoding did not produce a valid file: %s" % output_path)
             os.replace(temp_path, output_path)
         except Exception:
             if os.path.exists(temp_path):
@@ -419,10 +419,10 @@ class MSSTBatchSeparator:
             self.spec.secondary_stem,
         }.difference(results)
         if missing:
-            raise RuntimeError("模型缺少输出 stem: %s" % ", ".join(sorted(missing)))
+            raise RuntimeError("Model is missing output stem(s): %s" % ", ".join(sorted(missing)))
         for stem in (self.spec.desired_stem, self.spec.secondary_stem):
             if not np.isfinite(np.asarray(results[stem])).all():
-                raise FloatingPointError("模型输出包含 NaN/Inf: %s" % stem)
+                raise FloatingPointError("Model output contains NaN/Inf: %s" % stem)
 
         file_stem = Path(input_path).stem
         encode_started = time.perf_counter()
@@ -538,7 +538,7 @@ def _pymss_worker_main(request_path):
         spec = resolve_model(request["model_id"])
         input_paths = [os.path.abspath(path) for path in request["input_paths"]]
         if not input_paths:
-            raise ValueError("没有找到可处理的音频文件")
+            raise ValueError("No processable audio files were found")
         requested_dtype = (
             _normalize_dml_model_dtype(request.get("model_dtype", "float32"))
             if use_dml
@@ -557,7 +557,7 @@ def _pymss_worker_main(request_path):
             done = max(0.0, float(done or 0))
             total = max(1.0, float(total or 1))
             done = min(done, total)
-            message = str(message or "正在处理音频")
+            message = str(message or "Processing audio")
             now = time.monotonic()
             is_edge = done <= 0 or done >= total
             context_changed = (
@@ -607,7 +607,7 @@ def _pymss_worker_main(request_path):
             _worker_emit(
                 {
                     "event": "status",
-                    "message": "%s 模型已加载 | 参数精度 %s"
+                    "message": "%s model loaded | parameter precision %s"
                     % (device_label, batch.model_dtype.upper()),
                     "model_dtype": batch.model_dtype,
                 }
@@ -625,21 +625,21 @@ def _pymss_worker_main(request_path):
                         "file_index": file_index,
                         "file_count": file_count,
                         "path": input_path,
-                        "message": "[%s/%s] 开始处理 %s"
+                        "message": "[%s/%s] Starting %s"
                         % (file_index, file_count, os.path.basename(input_path)),
                     }
                 )
                 try:
                     result = batch.separate_file(input_path)
                     if use_dml:
-                        message = "%s -> 成功 | %s | 推理 %.2fs | 编码 %.2fs" % (
+                        message = "%s -> success | %s | infer %.2fs | encode %.2fs" % (
                             os.path.basename(input_path),
                             batch.model_dtype.upper(),
                             result["inference_seconds"],
                             result["encode_seconds"],
                         )
                     else:
-                        message = "%s -> 成功 | 推理 %.2fs | 编码 %.2fs" % (
+                        message = "%s -> success | infer %.2fs | encode %.2fs" % (
                             os.path.basename(input_path),
                             result["inference_seconds"],
                             result["encode_seconds"],
@@ -666,7 +666,7 @@ def _pymss_worker_main(request_path):
                         _worker_emit(
                             {
                                 "event": "retry_fp32",
-                                "message": "DirectML FP16 路径不兼容，准备改用 FP32",
+                                "message": "DirectML FP16 path is incompatible; switching to FP32",
                                 "detail": traceback.format_exc(),
                                 "file_index": file_index,
                                 "file_count": file_count,
@@ -681,7 +681,7 @@ def _pymss_worker_main(request_path):
                             "file_index": file_index,
                             "file_count": file_count,
                             "path": input_path,
-                            "message": "%s -> 失败\n%s"
+                            "message": "%s -> failed\n%s"
                             % (os.path.basename(input_path), traceback.format_exc()),
                         }
                     )
@@ -705,7 +705,7 @@ def _pymss_worker_main(request_path):
             _worker_emit(
                 {
                     "event": "fatal",
-                    "message": "%s子进程失败\n%s"
+                    "message": "%s worker failed\n%s"
                     % ("DML " if use_dml else "PyMSS ", traceback.format_exc()),
                     "retry_fp32": retry_fp32,
                 }
@@ -770,12 +770,12 @@ def _unregister_worker(task_id, process):
 def stop_pymss_separation():
     with PYMSS_WORKER_STATE_LOCK:
         if not PYMSS_WORKER_STATE["active"]:
-            return "当前没有正在运行的 PyMSS 任务。"
+            return "No PyMSS task is currently running."
         PYMSS_WORKER_STATE["stop_requested"] = True
         process = PYMSS_WORKER_STATE["process"]
     if process is not None:
         kill_process_tree(process, "PyMSS", logger)
-    return "已请求停止 PyMSS 分离任务。"
+    return "Stop requested for the PyMSS separation task."
 
 
 def _read_worker_log(path, limit=12000):
@@ -819,7 +819,7 @@ def _pymss_worker_events(
     if _pymss_task_stop_requested(task_id):
         yield {
             "event": "cancelled",
-            "message": "PyMSS 分离任务已停止。",
+            "message": "PyMSS separation task stopped.",
             "file_count": len(input_paths),
         }
         return
@@ -943,7 +943,7 @@ def _pymss_worker_events(
         if cancel_requested:
             yield {
                 "event": "cancelled",
-                "message": "PyMSS 分离任务已停止。",
+                "message": "PyMSS separation task stopped.",
                 "file_count": len(input_paths),
             }
             return
@@ -992,11 +992,11 @@ def pymss_separate(
         spec = resolve_model(model_name)
         input_paths = collect_input_paths(inp_root, paths)
         if not input_paths:
-            raise ValueError("没有找到可处理的音频文件")
+            raise ValueError("No processable audio files were found")
 
         task_id = _begin_pymss_task()
         if task_id is None:
-            message = "已有 PyMSS 分离任务正在运行，请先停止当前任务。"
+            message = "A PyMSS separation task is already running. Stop it before starting another."
             infos.append(message)
             notify({"event": "busy", "message": message})
             yield "\n".join(infos)
@@ -1004,11 +1004,11 @@ def pymss_separate(
 
         device_type = torch.device(config.device).type
         use_dml = device_type == "privateuseone"
-        infos.append("%s | %s | 正在加载模型" % (spec.label, spec.model_id))
+        infos.append("%s | %s | loading model" % (spec.label, spec.model_id))
         notify(
             {
                 "event": "preparing",
-                "message": "正在启动 PyMSS 模型子进程",
+                "message": "Starting PyMSS model worker",
                 "file_count": len(input_paths),
             }
         )
@@ -1025,7 +1025,7 @@ def pymss_separate(
             if _pymss_task_stop_requested(task_id):
                 event = {
                     "event": "cancelled",
-                    "message": "PyMSS 分离任务已停止。",
+                    "message": "PyMSS separation task stopped.",
                     "file_count": len(input_paths),
                 }
                 notify(event)
@@ -1034,7 +1034,7 @@ def pymss_separate(
                 return
 
             if use_dml:
-                attempt_message = "DirectML 正在尝试参数精度 %s" % model_dtype.upper()
+                attempt_message = "DirectML trying parameter precision %s" % model_dtype.upper()
                 infos.append(attempt_message)
                 logger.info(attempt_message)
                 notify(
@@ -1082,7 +1082,7 @@ def pymss_separate(
             except DMLFP16Fallback:
                 DML_FP16_DISABLED_MODEL_TYPES.add(spec.model_type)
                 retry_message = (
-                    "本机 DirectML 的 %s FP16 路径已降级；当前任务改用全新 FP32 子进程重试"
+                    "This machine cannot use the %s FP16 DirectML path; retrying the task in a fresh FP32 worker"
                     % spec.model_type
                 )
                 infos.append(retry_message)
@@ -1101,12 +1101,12 @@ def pymss_separate(
             break
     except Exception:
         if task_id is not None and _pymss_task_stop_requested(task_id):
-            message = "PyMSS 分离任务已停止。"
+            message = "PyMSS separation task stopped."
             infos.append(message)
             notify({"event": "cancelled", "message": message})
         else:
             detail = traceback.format_exc()
-            infos.append("失败\n%s" % detail)
+            infos.append("Failed\n%s" % detail)
             logger.error("PyMSS separation failed\n%s", detail)
             notify({"event": "fatal", "message": detail})
     finally:

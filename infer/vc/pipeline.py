@@ -20,11 +20,11 @@ from tools.cuda_graph import cuda_graph_enabled, run_cuda_graph
 bh, ah = signal.butter(N=5, Wn=48, btype="high", fs=16000)
 
 
-def change_rms(data1, sr1, data2, sr2, rate):  # 1是输入音频，2是输出音频,rate是2的占比
+def change_rms(data1, sr1, data2, sr2, rate):  # 1 = input, 2 = output, rate = mix of 2
     # print(data1.max(),data2.max())
     rms1 = librosa.feature.rms(
         y=data1, frame_length=sr1 // 2 * 2, hop_length=sr1 // 2
-    )  # 每半秒一个点
+    )  # one point every half second
     rms2 = librosa.feature.rms(y=data2, frame_length=sr2 // 2 * 2, hop_length=sr2 // 2)
     rms1 = torch.from_numpy(rms1)
     rms1 = F.interpolate(
@@ -51,14 +51,14 @@ class Pipeline(object):
             config.x_max,
             config.is_half,
         )
-        self.sr = 16000  # hubert输入采样率
-        self.window = 160  # 每帧点数
-        self.t_pad = self.sr * self.x_pad  # 每条前后pad时间
+        self.sr = 16000  # HuBERT input sample rate
+        self.window = 160  # samples per frame
+        self.t_pad = self.sr * self.x_pad  # padding on each side
         self.t_pad_tgt = tgt_sr * self.x_pad
         self.t_pad2 = self.t_pad * 2
-        self.t_query = self.sr * self.x_query  # 查询切点前后查询时间
-        self.t_center = self.sr * self.x_center  # 查询切点位置
-        self.t_max = self.sr * self.x_max  # 免查询时长阈值
+        self.t_query = self.sr * self.x_query  # search window around cut points
+        self.t_center = self.sr * self.x_center  # cut-point query position
+        self.t_max = self.sr * self.x_max  # skip query below this duration
         self.device = config.device
 
     def get_f0(

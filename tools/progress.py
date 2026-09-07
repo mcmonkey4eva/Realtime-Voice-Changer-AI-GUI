@@ -23,9 +23,9 @@ def batch_status(title, current, total, success, failed, latest="", failures=Non
     else:
         state = i18n("Processing")
     lines = [
-        "【%s】" % title,
-        "%s：%s" % (i18n("Status"), state),
-        "%s：%s/%s | %s：%s | %s：%s"
+        "[%s]" % title,
+        "%s: %s" % (i18n("Status"), state),
+        "%s: %s/%s | %s: %s | %s: %s"
         % (
             i18n("Progress"),
             current,
@@ -37,9 +37,9 @@ def batch_status(title, current, total, success, failed, latest="", failures=Non
         ),
     ]
     if latest:
-        lines.append("%s：%s" % (i18n("Current"), latest))
+        lines.append("%s: %s" % (i18n("Current"), latest))
     if failures:
-        lines.append("%s：" % i18n("Failure records"))
+        lines.append("%s: " % i18n("Failure records"))
         lines.extend(failures[-10:])
         if len(failures) > 10:
             lines.append(i18n("…Showing only the 10 most recent failures"))

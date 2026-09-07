@@ -490,7 +490,7 @@ def button_update(value=None, variant=None, visible=None):
     return update
 
 
-def render_pymss_progress(percent=0, label="等待开始", state="idle"):
+def render_pymss_progress(percent=0, label="Waiting to start", state="idle"):
     percent = max(0.0, min(100.0, float(percent or 0)))
     colors = {
         "idle": "#64748b",
@@ -526,7 +526,7 @@ def run_pymss_separation(
 ):
     progress_state = {
         "percent": 0.0,
-        "label": "正在准备 PyMSS 分离任务",
+        "label": "Preparing PyMSS separation task",
         "state": "running",
     }
     busy = False
@@ -545,10 +545,10 @@ def run_pymss_separation(
             progress_state["percent"] = (
                 (file_index - 1 + file_fraction) / file_count * 100
             )
-            progress_state["label"] = "文件 %s/%s · %s · %.0f/%.0f 秒" % (
+            progress_state["label"] = "File %s/%s · %s · %.0f/%.0f sec" % (
                 file_index,
                 file_count,
-                message or "正在处理音频",
+                message or "Processing audio",
                 done,
                 total,
             )
@@ -560,14 +560,14 @@ def run_pymss_separation(
         elif event_type == "file":
             progress_state["percent"] = file_index / file_count * 100
             progress_state["label"] = (
-                message.splitlines()[0] if message else "文件处理结束"
+                message.splitlines()[0] if message else "Finished processing file"
             )
             progress_state["state"] = "running" if event.get("ok") else "failed"
         elif event_type == "done":
             successful = int(event.get("successful") or 0)
             failed = int(event.get("failed") or 0)
             progress_state["percent"] = 100.0
-            progress_state["label"] = "分离完成：成功 %s，失败 %s" % (
+            progress_state["label"] = "Separation complete: %s succeeded, %s failed" % (
                 successful,
                 failed,
             )
@@ -577,11 +577,11 @@ def run_pymss_separation(
             progress_state["label"] = message
             progress_state["state"] = "running"
         elif event_type == "cancelled":
-            progress_state["label"] = message or "PyMSS 分离任务已停止"
+            progress_state["label"] = message or "PyMSS separation task stopped"
             progress_state["state"] = "stopped"
         elif event_type in {"fatal", "busy"}:
             progress_state["label"] = (
-                message.splitlines()[0] if message else "PyMSS 分离任务失败"
+                message.splitlines()[0] if message else "PyMSS separation task failed"
             )
             progress_state["state"] = "failed"
             busy = event_type == "busy"
@@ -613,9 +613,9 @@ def run_pymss_separation(
                 stop_button,
             )
     except Exception:
-        last_info = "失败\n%s" % traceback.format_exc()
+        last_info = "Failed\n%s" % traceback.format_exc()
         progress_state.update(
-            {"label": "PyMSS 分离任务失败", "state": "failed"}
+            {"label": "PyMSS separation task failed", "state": "failed"}
         )
         logger.exception("PyMSS WebUI task failed")
 
@@ -630,14 +630,14 @@ def run_pymss_separation(
 def stop_pymss_webui():
     return (
         _stop_pymss_separation_core(),
-        render_pymss_progress(0, "PyMSS 分离任务已停止", "stopped"),
+        render_pymss_progress(0, "PyMSS separation task stopped", "stopped"),
         button_update(visible=True),
         button_update(visible=False),
     )
 
 
 def format_status(title, state, detail=""):
-    lines = ["【%s】" % i18n(title), "%s：%s" % (i18n("Status"), i18n(state))]
+    lines = ["[%s]" % i18n(title), "%s: %s" % (i18n("Status"), i18n(state))]
     if detail:
         lines.extend(["", detail.strip()])
     return "\n".join(lines)
@@ -648,15 +648,15 @@ def format_workflow_status(step, detail="", completed_steps=None, state="Running
     detail = str(detail).strip()
     lines = []
     if completed_steps:
-        lines.append("%s：" % i18n("Completed stages"))
+        lines.append("%s: " % i18n("Completed stages"))
         lines.extend(
-            "✓ %s：%s" % (i18n(completed_step), i18n("Succeeded"))
+            "✓ %s: %s" % (i18n(completed_step), i18n("Succeeded"))
             for completed_step in completed_steps
         )
     if step:
         if lines:
             lines.append("")
-        lines.append("%s：%s" % (i18n("Current stage"), i18n(step)))
+        lines.append("%s: %s" % (i18n("Current stage"), i18n(step)))
     if detail:
         lines.extend(["", detail])
     return format_status(
@@ -1166,7 +1166,7 @@ def run_train_model(
     format_output=True,
     training_mode=None,
 ):
-    # 生成filelist
+    # Generate filelist
     exp_dir = "%s/logs/%s" % (now_dir, exp_dir1)
     os.makedirs(exp_dir, exist_ok=True)
     gt_wavs_dir = "%s/0_gt_wavs" % (exp_dir)
@@ -1272,7 +1272,7 @@ def run_train_model(
     with open("%s/filelist.txt" % exp_dir, "w", encoding="utf8") as f:
         f.write("\n".join(opt))
     logger.debug(i18n("Training file list written successfully"))
-    # 生成config#无需生成config
+    # Config generation is not needed
     # cmd = python_cmd + " train_nsf_sim_cache_sid_load_pretrain.py -e mi-test -sr 40k -f0 1 -bs 4 -g 0 -te 10 -se 5 -pg pretrained/f0G40k.pth -pd pretrained/f0D40k.pth -l 1 -c 0"
     logger.info(i18n("GPUs in use: %s"), str(gpus16))
     if pretrained_G14 == "":
@@ -2155,7 +2155,7 @@ with gr.Blocks(title="RVC WebUI", css=TRAINING_INFO_CSS) as app:
                             i18n("Stop separation"), variant="stop", visible=False
                         )
                     pymss_progress = gr.HTML(
-                        value=render_pymss_progress(0, "等待开始", "idle")
+                        value=render_pymss_progress(0, "Waiting to start", "idle")
                     )
                     vc_output4 = gr.Textbox(label=i18n("Output information"))
                     but2.click(
@@ -2252,7 +2252,7 @@ with gr.Blocks(title="RVC WebUI", css=TRAINING_INFO_CSS) as app:
                                             ),
                                             html.escape(
                                                 i18n(
-                                                    "多说话人总文件夹只扫描根目录下的直接子文件夹，根目录文件会被忽略。\n子文件夹必须命名为x_y_z：x是说话人名称，y是说话人ID（0~109，共110个），z是训练集重复次数。\n也可以到右侧“多说话人训练集辅助”编辑并提交训练集清单。"
+                                                    "Only direct subfolders of the multi-speaker root are scanned; root files are ignored.\nName each subfolder x_y_z: x is the speaker name, y is the speaker ID (0-109, 110 choices), and z is the repeat count.\nYou can also submit a manifest from the Multi-speaker Dataset Helper tab."
                                                 )
                                             ).replace("\n", "<br>"),
                                         )
@@ -2261,7 +2261,7 @@ with gr.Blocks(title="RVC WebUI", css=TRAINING_INFO_CSS) as app:
                         with gr.Row():
                             trainset_dir4 = gr.Textbox(
                                 label=i18n(
-                                    "输入训练文件夹路径，例如：E:\\我的训练集"
+                                    "Training folder path, for example: E:\\My training set"
                                 ),
                             )
                             spk_id5 = gr.Slider(

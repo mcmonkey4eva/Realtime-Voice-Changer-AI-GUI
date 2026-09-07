@@ -147,7 +147,7 @@ for idx, file in enumerate(todo):
             printt(i18n("[HuBERT features][Failed] %s contains NaN values") % file)
     except Exception:
         failed += 1
-        printt(i18n("[HuBERT特征][失败] %s\n%s") % (file, traceback.format_exc()))
+        printt(i18n("[HuBERT features][Failed] %s\n%s") % (file, traceback.format_exc()))
 printt(
     i18n("[HuBERT features] Completed | Success: %s | Skipped: %s | Failed: %s")
     % (success, skipped, failed)

@@ -30,7 +30,7 @@ def load_checkpoint_d(checkpoint_path, combd, sbd, optimizer=None, load_opt=1):
         else:
             state_dict = model.state_dict()
         new_state_dict = {}
-        for k, v in state_dict.items():  # 模型需要的shape
+        for k, v in state_dict.items():  # shape required by the model
             try:
                 new_state_dict[k] = saved_state_dict[k]
                 if saved_state_dict[k].shape != state_dict[k].shape:
@@ -43,8 +43,8 @@ def load_checkpoint_d(checkpoint_path, combd, sbd, optimizer=None, load_opt=1):
                     raise KeyError
             except:
                 # logger.info(traceback.format_exc())
-                logger.info("%s is not in the checkpoint", k)  # pretrain缺失的
-                new_state_dict[k] = v  # 模型自带的随机值
+                logger.info("%s is not in the checkpoint", k)  # missing from pretrained weights
+                new_state_dict[k] = v  # keep the model's random init
         if hasattr(model, "module"):
             model.module.load_state_dict(new_state_dict, strict=False)
         else:
@@ -60,7 +60,7 @@ def load_checkpoint_d(checkpoint_path, combd, sbd, optimizer=None, load_opt=1):
     learning_rate = checkpoint_dict["learning_rate"]
     if (
         optimizer is not None and load_opt == 1
-    ):  ###加载不了，如果是空的的话，重新初始化，可能还会影响lr时间表的更新，因此在train文件最外围catch
+    ):  ### reload failed; if empty, re-init (may affect the LR schedule); catch this in train.py
         #   try:
         optimizer.load_state_dict(checkpoint_dict["optimizer"])
     #   except:
@@ -109,7 +109,7 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, load_opt=1):
         state_dict = model.state_dict()
     new_state_dict = {}
     embedding_resized = False
-    for k, v in state_dict.items():  # 模型需要的shape
+    for k, v in state_dict.items():  # shape required by the model
         try:
             new_state_dict[k] = saved_state_dict[k]
             if saved_state_dict[k].shape != state_dict[k].shape:
@@ -132,8 +132,8 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, load_opt=1):
                 raise KeyError
         except:
             # logger.info(traceback.format_exc())
-            logger.info("%s is not in the checkpoint", k)  # pretrain缺失的
-            new_state_dict[k] = v  # 模型自带的随机值
+            logger.info("%s is not in the checkpoint", k)  # missing from pretrained weights
+            new_state_dict[k] = v  # keep the model's random init
     if hasattr(model, "module"):
         model.module.load_state_dict(new_state_dict, strict=False)
     else:
@@ -144,7 +144,7 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, load_opt=1):
     learning_rate = checkpoint_dict["learning_rate"]
     if (
         optimizer is not None and load_opt == 1 and not embedding_resized
-    ):  ###加载不了，如果是空的的话，重新初始化，可能还会影响lr时间表的更新，因此在train文件最外围catch
+    ):  ### reload failed; if empty, re-init (may affect the LR schedule); catch this in train.py
         #   try:
         optimizer.load_state_dict(checkpoint_dict["optimizer"])
     #   except:
@@ -302,19 +302,19 @@ def load_filepaths_and_text(filename, split="|"):
 def get_hparams(init=True):
     """
     todo:
-      结尾七人组：
-        保存频率、总epoch                     done
+      remaining args:
+        save frequency, total epochs          done
         bs                                    done
-        pretrainG、pretrainD                  done
-        卡号：os.en["CUDA_VISIBLE_DEVICES"]   done
+        pretrainG, pretrainD                  done
+        GPU ids: os.en["CUDA_VISIBLE_DEVICES"] done
         if_latest                             done
-      模型：if_f0                             done
-      采样率：自动选择config                  done
-      是否缓存数据集进GPU:if_cache_data_in_gpu done
+      model: if_f0                            done
+      sample rate: pick config automatically  done
+      cache dataset on GPU: if_cache_data_in_gpu done
 
       -m:
-        自动决定training_files路径,改掉train_nsf_load_pretrain.py里的hps.data.training_files    done
-      -c不要了
+        derive training_files path automatically; drop hps.data.training_files from train_nsf_load_pretrain.py    done
+      -c is no longer used
     """
     parser = argparse.ArgumentParser()
     parser.add_argument(
