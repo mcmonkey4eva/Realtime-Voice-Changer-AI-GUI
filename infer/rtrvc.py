@@ -265,9 +265,10 @@ class RVC:
                         + (1 - self.index_rate) * feats[0][skip_head // 2 :]
                     )
                 else:
-                    printt(
-                        i18n("Invalid index: use added_xxxx.index, not trained_xxxx.index")
-                    )
+                    if report_status:
+                        printt(
+                            i18n("Invalid index: use added_xxxx.index, not trained_xxxx.index")
+                        )
             else:
                 if report_status:
                     printt(i18n("Index search failed or is disabled"))
