@@ -179,6 +179,78 @@ class GUI:
         except Exception as e:
             print(f"Failed to save model_root: {e}")
 
+    def refresh_preset_combo(self, selected=""):
+        names = sorted(gui_settings.read_presets())
+        if selected not in names:
+            selected = ""
+        self.window["preset"].update(values=names, value=selected)
+
+    def prompt_new_preset_name(self):
+        layout = [
+            [sg.Text(i18n("Preset name")), sg.Input(key="new_preset_name", size=(32, 1), focus=True)],
+            [sg.Button(i18n("Cancel"), key="new_preset_cancel"), sg.Button(i18n("Save"), key="new_preset_save")],
+        ]
+        win = sg.Window(i18n("Create New Preset"), layout, modal=True, finalize=True)
+        name = None
+        while True:
+            event, values = win.read()
+            if event in (sg.WIN_CLOSED, "new_preset_cancel"):
+                break
+            if event == "new_preset_save":
+                name = (values.get("new_preset_name") or "").strip()
+                break
+        win.close()
+        return name
+
+    def apply_preset(self, name, values):
+        global flag_vc
+        snap = gui_settings.read_presets().get(name)
+        if not name or not isinstance(snap, dict):
+            return
+        data = gui_settings.loaded_preset(snap)
+        hostapi = data.get("sg_hostapi", "")
+        if hostapi and hostapi != values.get("sg_hostapi"):
+            if flag_vc:
+                self.stop_stream()
+            self.update_devices(hostapi_name=hostapi)
+            if hostapi not in self.hostapis:
+                hostapi = self.hostapis[0]
+                data["sg_hostapi"] = hostapi
+            self.window["sg_hostapi"].Update(values=self.hostapis)
+            self.window["sg_input_device"].Update(values=self.input_devices)
+            self.window["sg_output_device"].Update(values=self.output_devices)
+        if data["sg_input_device"] not in self.input_devices and self.input_devices:
+            data["sg_input_device"] = self.input_devices[0]
+        if data["sg_output_device"] not in self.output_devices and self.output_devices:
+            data["sg_output_device"] = self.output_devices[0]
+        root = data.get("model_root", "")
+        self.window["model_root"].update(root)
+        identities = self.model_identity_list(root)
+        identity = data.get("model_identity", "")
+        if identity not in identities:
+            identity = NONE_MODEL
+            data["model_identity"] = identity
+        self.window["model_identity"].Update(values=identities, value=identity)
+        for key in ("sg_hostapi", "sg_input_device", "sg_output_device", "sg_wasapi_exclusive", "threhold", "pitch", "formant", "index_rate", "rms_mix_rate", "block_time", "crossfade_length", "extra_time", "sr_model", "sr_device", "pm", "rmvpe", "fcpe", "I_noise_reduce", "O_noise_reduce", "debug"):
+            self.window[key].update(data[key])
+        self.window["preset"].update(name)
+        merged = dict(values)
+        for key in list(gui_settings.PRESET_KEYS) + ["sr_model", "sr_device", "pm", "rmvpe", "fcpe"]:
+            if key in data:
+                merged[key] = data[key]
+        merged["run_audio"] = values.get("run_audio")
+        merged["change_voice"] = values.get("change_voice")
+        merged["preset"] = name
+        merged["model_identity"] = identity
+        self.last_values = merged
+        self.set_values(merged, require_model=False)
+        if self.rvc is not None:
+            self.rvc.change_key(merged["pitch"])
+            self.rvc.change_formant(merged["formant"])
+            self.rvc.change_index_rate(merged["index_rate"])
+        gui_settings.update(**{key: data[key] for key in gui_settings.PRESET_KEYS}, preset=name)
+        self.request_audio_reload()
+
     def launcher(self):
         data = self.load()
         model_root = data.get("model_root", "")
@@ -187,6 +259,11 @@ class GUI:
         if model_identity not in identities:
             model_identity = NONE_MODEL
         self.gui_config.debug = data.get("debug", False)
+        presets = data.get("presets") if isinstance(data.get("presets"), dict) else {}
+        preset_names = sorted(presets)
+        preset = data.get("preset", "")
+        if preset not in preset_names:
+            preset = ""
         sg.theme("LightBlue3")
         layout = [
             [
@@ -202,7 +279,20 @@ class GUI:
                             sg.Combo(identities, key="model_identity", default_value=model_identity, enable_events=True, size=(45, 1), tooltip=i18n("Voice identity to load. None keeps your own voice and still applies Pitch and Gender factor. Other names use the .pth and .index inside that subfolder.")),
                         ],
                     ],
-                )
+                ),
+                sg.Frame(
+                    title=i18n("Presets"),
+                    layout=[
+                        [
+                            sg.Combo(preset_names, key="preset", default_value=preset, enable_events=True, size=(28, 1), tooltip=i18n("Saved combinations of model, devices, and conversion settings. Run Audio and Change Voice are not stored.")),
+                        ],
+                        [
+                            sg.Button(i18n("Create New Preset"), key="preset_create", tooltip=i18n("Save the current settings as a new named preset.")),
+                            sg.Button(i18n("Update"), key="preset_update", tooltip=i18n("Overwrite the selected preset with the current settings.")),
+                            sg.Button(i18n("Delete"), key="preset_delete", tooltip=i18n("Remove the selected preset.")),
+                        ],
+                    ],
+                ),
             ],
             [
                 sg.Frame(
@@ -282,8 +372,8 @@ class GUI:
                             sg.Slider(range=(0.05, 5.00), key="extra_time", resolution=0.01, orientation="h", default_value=data.get("extra_time", 2.5), tooltip=i18n("Extra past audio (seconds) given to the model as context before the current chunk. More can improve quality; it uses more compute and adds delay.")),
                         ],
                         [
-                            sg.Checkbox(i18n("Input noise reduction"), key="I_noise_reduce", enable_events=True, tooltip=i18n("Spectral gate on the microphone before conversion. Cuts hiss; adds a little delay.")),
-                            sg.Checkbox(i18n("Output noise reduction"), key="O_noise_reduce", enable_events=True, tooltip=i18n("Spectral gate on the converted voice. Can tame residual hiss after conversion.")),
+                            sg.Checkbox(i18n("Input noise reduction"), key="I_noise_reduce", default=data.get("I_noise_reduce", False), enable_events=True, tooltip=i18n("Spectral gate on the microphone before conversion. Cuts hiss; adds a little delay.")),
+                            sg.Checkbox(i18n("Output noise reduction"), key="O_noise_reduce", default=data.get("O_noise_reduce", False), enable_events=True, tooltip=i18n("Spectral gate on the converted voice. Can tame residual hiss after conversion.")),
                         ],
                     ],
                     title=i18n("Performance settings"),
@@ -507,6 +597,47 @@ class GUI:
         elif event == "debug":
             self.gui_config.debug = values["debug"]
             gui_settings.update(debug=values["debug"])
+        elif event == "preset":
+            self.apply_preset(values.get("preset") or "", values)
+        elif event == "preset_create":
+            name = self.prompt_new_preset_name()
+            if name is None:
+                return
+            if not name:
+                sg.popup(i18n("Please enter a preset name"))
+                return
+            presets = gui_settings.read_presets()
+            if name in presets:
+                sg.popup(i18n("A preset with that name already exists"))
+                return
+            presets[name] = gui_settings.snapshot(values)
+            gui_settings.update(presets=presets, preset=name)
+            self.refresh_preset_combo(name)
+            if self.last_values:
+                self.last_values["preset"] = name
+        elif event == "preset_update":
+            name = values.get("preset") or ""
+            if not name or name not in gui_settings.read_presets():
+                sg.popup(i18n("Select a preset"))
+                return
+            if sg.popup_yes_no(i18n("Are you sure?"), title=i18n("Update")) != "Yes":
+                return
+            presets = gui_settings.read_presets()
+            presets[name] = gui_settings.snapshot(values)
+            gui_settings.update(presets=presets, preset=name)
+        elif event == "preset_delete":
+            name = values.get("preset") or ""
+            if not name or name not in gui_settings.read_presets():
+                sg.popup(i18n("Select a preset"))
+                return
+            if sg.popup_yes_no(i18n("Are you sure?"), title=i18n("Delete")) != "Yes":
+                return
+            presets = gui_settings.read_presets()
+            presets.pop(name, None)
+            gui_settings.update(presets=presets, preset="")
+            self.refresh_preset_combo("")
+            if self.last_values:
+                self.last_values["preset"] = ""
         else:
             self.request_audio_reload()
 

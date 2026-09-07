@@ -5,6 +5,28 @@ from tools.file_io import read_text
 
 PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
+PRESET_KEYS = (
+    "model_root",
+    "model_identity",
+    "sg_hostapi",
+    "sg_wasapi_exclusive",
+    "sg_input_device",
+    "sg_output_device",
+    "sr_type",
+    "threhold",
+    "pitch",
+    "formant",
+    "index_rate",
+    "rms_mix_rate",
+    "block_time",
+    "crossfade_length",
+    "extra_time",
+    "f0method",
+    "debug",
+    "I_noise_reduce",
+    "O_noise_reduce",
+)
+
 DEFAULTS = {
     "model_root": "",
     "model_identity": "",
@@ -23,6 +45,9 @@ DEFAULTS = {
     "extra_time": 2.5,
     "f0method": "rmvpe",
     "debug": False,
+    "I_noise_reduce": False,
+    "O_noise_reduce": False,
+    "preset": "",
 }
 
 
@@ -72,4 +97,21 @@ def from_values(values):
     data = {key: values[key] for key in DEFAULTS if key in values}
     data["sr_type"] = ["sr_model", "sr_device"][[values["sr_model"], values["sr_device"]].index(True)]
     data["f0method"] = ["pm", "rmvpe", "fcpe"][[values["pm"], values["rmvpe"], values["fcpe"]].index(True)]
-    return build(**data)
+    data = build(**data)
+    presets = read().get("presets")
+    data["presets"] = presets if isinstance(presets, dict) else {}
+    return data
+
+
+def read_presets():
+    presets = read().get("presets")
+    return presets if isinstance(presets, dict) else {}
+
+
+def snapshot(values):
+    data = from_values(values)
+    return {key: data[key] for key in PRESET_KEYS}
+
+
+def loaded_preset(snap):
+    return build(**{key: snap[key] for key in PRESET_KEYS if isinstance(snap, dict) and key in snap})
