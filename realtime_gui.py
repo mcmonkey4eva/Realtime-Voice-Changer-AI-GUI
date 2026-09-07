@@ -161,6 +161,8 @@ if __name__ == "__main__":
                     data = {
                         "pth_path": "",
                         "index_path": "",
+                        "model_root": "",
+                        "model_identity": "",
                         "sg_hostapi": self.hostapis[0],
                         "sg_wasapi_exclusive": False,
                         "sg_input_device": self.input_devices[
@@ -197,26 +199,28 @@ if __name__ == "__main__":
                         layout=[
                             [
                                 sg.Input(
-                                    default_text=data.get("pth_path", ""),
-                                    key="pth_path",
+                                    default_text=model_root,
+                                    key="model_root",
+                                    enable_events=True,
                                 ),
-                                sg.FileBrowse(
-                                    i18n("Select the .pth file"),
-                                    initial_folder=os.path.join(
-                                        os.getcwd(), "assets/weights"
-                                    ),
-                                    file_types=((". pth"),),
+                                sg.FolderBrowse(
+                                    i18n("Select root folder"),
+                                    key="select_model_root",
+                                    target="model_root",
+                                    enable_events=True,
+                                    initial_folder=model_root
+                                    if os.path.isdir(model_root)
+                                    else os.path.join(os.getcwd(), "assets/weights"),
                                 ),
                             ],
                             [
-                                sg.Input(
-                                    default_text=data.get("index_path", ""),
-                                    key="index_path",
-                                ),
-                                sg.FileBrowse(
-                                    i18n("Select the .index file"),
-                                    initial_folder=os.path.join(os.getcwd(), "logs"),
-                                    file_types=((". index"),),
+                                sg.Text(i18n("Model")),
+                                sg.Combo(
+                                    identities,
+                                    key="model_identity",
+                                    default_value=model_identity,
+                                    enable_events=True,
+                                    size=(45, 1),
                                 ),
                             ],
                         ],
