@@ -69,10 +69,6 @@ def update(**changes):
 
 def from_values(values):
     data = {key: values[key] for key in DEFAULTS if key in values}
-    data["sr_type"] = ["sr_model", "sr_device"][
-        [values["sr_model"], values["sr_device"]].index(True)
-    ]
-    data["f0method"] = ["pm", "rmvpe", "fcpe"][
-        [values["pm"], values["rmvpe"], values["fcpe"]].index(True)
-    ]
+    data["sr_type"] = ["sr_model", "sr_device"][[values["sr_model"], values["sr_device"]].index(True)]
+    data["f0method"] = ["pm", "rmvpe", "fcpe"][[values["pm"], values["rmvpe"], values["fcpe"]].index(True)]
     return build(**data)
